@@ -135,7 +135,6 @@ export class AutoRescueWatcher {
               );
 
               ctx.onCardRotated(newCard.id, cardTitle);
-              await trelloCards.addComment(newCard.id, 'Iniciando novo bloco de atividades.');
 
               storage.addLog({
                 type: 'CARD_ROTATED',

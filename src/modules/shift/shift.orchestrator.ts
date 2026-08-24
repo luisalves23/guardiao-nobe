@@ -269,12 +269,6 @@ export class ShiftOrchestrator {
       this.scheduleNextJitters();
       this.saveCurrentState();
 
-      // Comentário configurável de início
-      const startCfg = config.actionMessages?.start;
-      if (startCfg?.enabled && startCfg.text && this.activeCardId) {
-        await trelloCards.addComment(this.activeCardId, startCfg.text);
-      }
-
       storage.addLog({
         type: 'SHIFT_STARTED',
         message: `Expediente iniciado e ativo no card "${this.activeCardName}".`,
@@ -320,11 +314,7 @@ export class ShiftOrchestrator {
         const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
         const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
 
-        const pauseCfg = config.actionMessages?.pause;
         for (const card of cardsInWorking) {
-          if (pauseCfg?.enabled && pauseCfg.text) {
-            await trelloCards.addComment(card.id, pauseCfg.text);
-          }
           await trelloCards.moveCard(card.id, monthlyList.id);
         }
       } catch (err: any) {
@@ -378,11 +368,6 @@ export class ShiftOrchestrator {
       this.cardStartTime = Date.now();
       this.cardAccumulatedMinutes = 0;
 
-      const resumeCfg = config.actionMessages?.resume;
-      if (resumeCfg?.enabled && resumeCfg.text) {
-        await trelloCards.addComment(newCard.id, resumeCfg.text);
-      }
-
       storage.addLog({
         type: 'RESUMED',
         message: `Expediente retomado com novo card "${cardTitle}".`,
@@ -406,11 +391,6 @@ export class ShiftOrchestrator {
         this.cardDate = today;
         this.cardStartTime = Date.now();
         this.cardAccumulatedMinutes = 0;
-      }
-
-      const resumeCfg = config.actionMessages?.resume;
-      if (resumeCfg?.enabled && resumeCfg.text && this.activeCardId) {
-        await trelloCards.addComment(this.activeCardId, resumeCfg.text);
       }
 
       storage.addLog({
@@ -449,11 +429,7 @@ export class ShiftOrchestrator {
         const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
         const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
 
-        const lunchCfg = config.actionMessages?.lunch;
         for (const card of cardsInWorking) {
-          if (lunchCfg?.enabled && lunchCfg.text) {
-            await trelloCards.addComment(card.id, lunchCfg.text);
-          }
           await trelloCards.moveCard(card.id, monthlyList.id);
         }
       } catch (err: any) {
@@ -494,11 +470,7 @@ export class ShiftOrchestrator {
         const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
         const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
 
-        const endCfg = config.actionMessages?.end;
         for (const card of cardsInWorking) {
-          if (endCfg?.enabled && endCfg.text) {
-            await trelloCards.addComment(card.id, endCfg.text);
-          }
           await trelloCards.moveCard(card.id, monthlyList.id);
         }
       } catch (err: any) {
@@ -544,11 +516,6 @@ export class ShiftOrchestrator {
 
     try {
       const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
-
-      const rotateCfg = config.actionMessages?.rotate;
-      if (rotateCfg?.enabled && rotateCfg.text) {
-        await trelloCards.addComment(this.activeCardId, rotateCfg.text);
-      }
       await trelloCards.moveCard(this.activeCardId, monthlyList.id);
 
       const cardTitle = `Trabalho do Dia - ${today} - ${config.trello.userName || 'Luís Alves'}`;
