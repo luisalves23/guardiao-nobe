@@ -145,8 +145,6 @@ function renderLiveStatus() {
   }
 
   // Horas & Ganhos
-  const topHours = document.getElementById('topHours');
-  const topEarnings = document.getElementById('topEarnings');
   if (topHours) {
     if (liveStatus.todayFormattedTime) {
       topHours.innerText = liveStatus.todayFormattedTime;
@@ -555,13 +553,17 @@ async function loadWhatsAppStatus() {
     const data = await res.json();
 
     const qrImg = document.getElementById('waQrImage');
-    if (data.qrCode) {
-      qrImg.src = data.qrCode;
-      qrImg.classList.remove('hidden');
+    if (qrImg) {
+      if (data.qrCode) {
+        qrImg.src = data.qrCode;
+        qrImg.classList.remove('hidden');
+      } else {
+        qrImg.classList.add('hidden');
+      }
     }
 
     const chatContainer = document.getElementById('chatHistory');
-    if (data.recentMessages && data.recentMessages.length > 0) {
+    if (chatContainer && data.recentMessages && data.recentMessages.length > 0) {
       chatContainer.innerHTML = data.recentMessages
         .map((m) => {
           const isOut = m.type === 'OUT';
@@ -606,50 +608,62 @@ function exportLogs() {
   window.open('/api/logs/export', '_blank');
 }
 
-// Configurações e Trello
+// Configurações
 async function loadConfig() {
   try {
     const res = await fetch('/api/config');
     configData = await res.json();
 
-    document.getElementById('cfgApiKey').value = configData.trello.apiKey || '';
-    document.getElementById('cfgToken').value = configData.trello.token || '';
-    document.getElementById('cfgBoardId').value = configData.trello.boardId || '';
-    document.getElementById('cfgWorkingListId').value = configData.trello.workingListId || '';
-    document.getElementById('cfgWaitListId').value = configData.trello.waitListId || '';
-    document.getElementById('cfgMemberId').value = configData.trello.memberId || '';
-    document.getElementById('cfgUserName').value = configData.trello.userName || 'Luís Alves';
-    document.getElementById('cfgHourlyRate').value = configData.hourlyRate || 18;
-    document.getElementById('cfgRotationLimitMinutes').value = configData.rotationLimitMinutes || 230;
-    document.getElementById('cfgPhone').value = configData.notificationPhone || '';
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+    };
+    const setChecked = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.checked = val;
+    };
+    const setText = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.innerText = val;
+    };
 
-    document.getElementById('cfgTelegramToken').value = (configData.telegram && configData.telegram.botToken) || '';
+    setVal('cfgApiKey', configData.trello.apiKey || '');
+    setVal('cfgToken', configData.trello.token || '');
+    setVal('cfgBoardId', configData.trello.boardId || '');
+    setVal('cfgWorkingListId', configData.trello.workingListId || '');
+    setVal('cfgWaitListId', configData.trello.waitListId || '');
+    setVal('cfgMemberId', configData.trello.memberId || '');
+    setVal('cfgUserName', configData.trello.userName || 'Luís Alves');
+    setVal('cfgHourlyRate', configData.hourlyRate || 18);
+    setVal('cfgRotationLimitMinutes', configData.rotationLimitMinutes || 230);
+    setVal('cfgPhone', configData.notificationPhone || '');
+    setVal('cfgTelegramToken', (configData.telegram && configData.telegram.botToken) || '');
 
     // Carrega mensagens customizáveis por ação
     const msgs = configData.actionMessages || {};
-    document.getElementById('cfgMsgStartEnabled').checked = msgs.start?.enabled !== false;
-    document.getElementById('cfgMsgStartText').value = msgs.start?.text || 'Iniciando as atividades do dia.';
+    setChecked('cfgMsgStartEnabled', msgs.start?.enabled !== false);
+    setVal('cfgMsgStartText', msgs.start?.text || 'Iniciando as atividades do dia.');
 
-    document.getElementById('cfgMsgLunchEnabled').checked = msgs.lunch?.enabled !== false;
-    document.getElementById('cfgMsgLunchText').value = msgs.lunch?.text || 'Pausa para almoço.';
+    setChecked('cfgMsgLunchEnabled', msgs.lunch?.enabled !== false);
+    setVal('cfgMsgLunchText', msgs.lunch?.text || 'Pausa para almoço.');
 
-    document.getElementById('cfgMsgResumeEnabled').checked = msgs.resume?.enabled !== false;
-    document.getElementById('cfgMsgResumeText').value = msgs.resume?.text || 'Retomando as tarefas.';
+    setChecked('cfgMsgResumeEnabled', msgs.resume?.enabled !== false);
+    setVal('cfgMsgResumeText', msgs.resume?.text || 'Retomando as tarefas.');
 
-    document.getElementById('cfgMsgPauseEnabled').checked = msgs.pause?.enabled === true;
-    document.getElementById('cfgMsgPauseText').value = msgs.pause?.text || 'Pausa rápida.';
+    setChecked('cfgMsgPauseEnabled', msgs.pause?.enabled === true);
+    setVal('cfgMsgPauseText', msgs.pause?.text || 'Pausa rápida.');
 
-    document.getElementById('cfgMsgRotateEnabled').checked = msgs.rotate?.enabled !== false;
-    document.getElementById('cfgMsgRotateText').value = msgs.rotate?.text || 'Atualizando card para continuidade das tarefas.';
+    setChecked('cfgMsgRotateEnabled', msgs.rotate?.enabled !== false);
+    setVal('cfgMsgRotateText', msgs.rotate?.text || 'Atualizando card para continuidade das tarefas.');
 
-    document.getElementById('cfgMsgEndEnabled').checked = msgs.end?.enabled === true;
-    document.getElementById('cfgMsgEndText').value = msgs.end?.text || 'Finalizando o expediente por hoje.';
+    setChecked('cfgMsgEndEnabled', msgs.end?.enabled === true);
+    setVal('cfgMsgEndText', msgs.end?.text || 'Finalizando o expediente por hoje.');
 
     // Atualiza preview da coluna mensal
     const monthsPt = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
     const currentMonth = monthsPt[new Date().getMonth()];
-    document.getElementById('monthlyColumnPreview').innerText = `${currentMonth} - ${configData.trello.userName || 'Luís Alves'}`;
-    document.getElementById('rateBadge').innerText = `Taxa: R$ ${Number(configData.hourlyRate || 18).toFixed(2).replace('.', ',')}/h`;
+    setText('monthlyColumnPreview', `${currentMonth} - ${configData.trello.userName || 'Luís Alves'}`);
+    setText('rateBadge', `Taxa: R$ ${Number(configData.hourlyRate || 18).toFixed(2).replace('.', ',')}/h`);
   } catch (err) {
     console.error('Erro ao carregar configurações:', err);
   }
@@ -739,3 +753,17 @@ async function testTrello() {
     feedback.innerText = `❌ Erro: ${err.message}`;
   }
 }
+
+// Exposição Global no Window
+window.switchTab = switchTab;
+window.controlAction = controlAction;
+window.promptQuickComment = promptQuickComment;
+window.addAgendaItem = addAgendaItem;
+window.toggleAgendaItem = toggleAgendaItem;
+window.removeAgendaItem = removeAgendaItem;
+window.addTemplateItem = addTemplateItem;
+window.removeTemplateItem = removeTemplateItem;
+window.saveSettings = saveSettings;
+window.testTrello = testTrello;
+window.exportLogs = exportLogs;
+window.loadLogs = loadLogs;
