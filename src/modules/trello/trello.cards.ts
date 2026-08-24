@@ -1,4 +1,5 @@
 import { TrelloClient } from './trello.client.js';
+import { StorageService } from '../../services/storage.service.js';
 
 export interface TrelloCard {
   id: string;
@@ -50,7 +51,16 @@ export class TrelloCardsManager {
       params.idMembers = memberId;
     }
     const res = await client.getHttp().post('/cards', null, { params });
-    return res.data;
+    const card = res.data;
+
+    StorageService.getInstance().addLog({
+      type: 'CARD_CREATED',
+      message: `Card "${name}" criado com sucesso no Trello (ID: ${card.id}).`,
+      source: 'SYSTEM',
+      details: { cardId: card.id, cardName: name, targetListId: listId },
+    });
+
+    return card;
   }
 
   public async moveCard(cardId: string, targetListId: string): Promise<TrelloCard> {
@@ -61,7 +71,16 @@ export class TrelloCardsManager {
         idList: targetListId,
       },
     });
-    return res.data;
+    const card = res.data;
+
+    StorageService.getInstance().addLog({
+      type: 'CARD_MOVED',
+      message: `Card "${card.name || cardId}" movido para a lista ${targetListId}.`,
+      source: 'SYSTEM',
+      details: { cardId, cardName: card.name, targetListId },
+    });
+
+    return card;
   }
 
   public async unarchiveCard(cardId: string, targetListId?: string): Promise<TrelloCard> {
@@ -74,7 +93,16 @@ export class TrelloCardsManager {
       params.idList = targetListId;
     }
     const res = await client.getHttp().put(`/cards/${cardId}`, null, { params });
-    return res.data;
+    const card = res.data;
+
+    StorageService.getInstance().addLog({
+      type: 'CARD_UNARCHIVED',
+      message: `Card "${card.name || cardId}" desarquivado com sucesso e retornado à lista ${targetListId || 'original'}.`,
+      source: 'SYSTEM',
+      details: { cardId, cardName: card.name, targetListId },
+    });
+
+    return card;
   }
 
   public async addComment(cardId: string, text: string): Promise<any> {
@@ -85,6 +113,14 @@ export class TrelloCardsManager {
         text,
       },
     });
+
+    StorageService.getInstance().addLog({
+      type: 'COMMENT_SENT',
+      message: `Comentário registrado no card (${cardId}): "${text}"`,
+      source: 'SYSTEM',
+      details: { cardId, commentText: text },
+    });
+
     return res.data;
   }
 }

@@ -109,15 +109,33 @@ export class ShiftOrchestrator {
   public getNextCommentTargetTime() { return this.nextCommentTargetTime; }
   public isCommentInProgress() { return this.isProcessingComment; }
 
+  private scheduleNextJitters() {
+    const commentJitterMs = getCommentJitterMs();
+    const rotationJitterMs = getRotationJitterMs();
+    this.lastCommentTime = Date.now();
+    this.nextCommentTargetTime = Date.now() + commentJitterMs;
+    this.nextRotationTargetTime = Date.now() + rotationJitterMs;
+
+    StorageService.getInstance().addLog({
+      type: 'JITTER_CALCULATED',
+      message: `Próximo comentário sorteado para daqui a ${(commentJitterMs / 60000).toFixed(1)}m. Rotação prevista para daqui a ${(rotationJitterMs / 60000).toFixed(1)}m.`,
+      source: 'SYSTEM',
+      details: {
+        nextCommentInMinutes: Math.round(commentJitterMs / 60000),
+        nextRotationInMinutes: Math.round(rotationJitterMs / 60000),
+        nextCommentTime: new Date(this.nextCommentTargetTime).toISOString(),
+        nextRotationTime: new Date(this.nextRotationTargetTime).toISOString(),
+      },
+    });
+  }
+
   public setAdoptedCard(cardId: string, cardName: string) {
     this.activeCardId = cardId;
     this.activeCardName = cardName;
     this.cardDate = formatTodayDate(new Date());
     if (!this.cardStartTime) this.cardStartTime = Date.now();
-    this.lastCommentTime = Date.now();
-    this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
-    this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
     this.state = 'WORKING';
+    this.scheduleNextJitters();
     this.saveCurrentState();
     this.broadcastStatus();
   }
@@ -128,16 +146,13 @@ export class ShiftOrchestrator {
     this.cardDate = formatTodayDate(new Date());
     this.cardStartTime = Date.now();
     this.cardAccumulatedMinutes = 0;
-    this.lastCommentTime = Date.now();
-    this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
-    this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
+    this.scheduleNextJitters();
     this.saveCurrentState();
     this.broadcastStatus();
   }
 
   public setRescued() {
-    this.lastCommentTime = Date.now();
-    this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+    this.scheduleNextJitters();
     this.saveCurrentState();
     this.broadcastStatus();
   }
@@ -200,10 +215,8 @@ export class ShiftOrchestrator {
         }
       }
 
-      this.lastCommentTime = Date.now();
-      this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
-      this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
       this.state = 'WORKING';
+      this.scheduleNextJitters();
       this.saveCurrentState();
 
       // Comentário configurável de início
@@ -214,7 +227,7 @@ export class ShiftOrchestrator {
 
       storage.addLog({
         type: 'SHIFT_STARTED',
-        message: `Expediente ativo no card "${this.activeCardName}".`,
+        message: `Expediente iniciado e ativo no card "${this.activeCardName}".`,
         source: 'SYSTEM',
         details: { cardId: this.activeCardId, cardTitle: this.activeCardName },
       });
@@ -337,9 +350,7 @@ export class ShiftOrchestrator {
       });
     }
 
-    this.lastCommentTime = Date.now();
-    this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
-    this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
+    this.scheduleNextJitters();
     this.saveCurrentState();
 
     await dispatcher.broadcastAlert(
@@ -475,9 +486,7 @@ export class ShiftOrchestrator {
       this.cardDate = today;
       this.cardStartTime = Date.now();
       this.cardAccumulatedMinutes = 0;
-      this.lastCommentTime = Date.now();
-      this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
-      this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
+      this.scheduleNextJitters();
 
       this.saveCurrentState();
 
@@ -539,6 +548,7 @@ export class ShiftOrchestrator {
         this.cardStartTime = Date.now();
         this.cardAccumulatedMinutes = 0;
         this.todayWorkedMinutes = 0; // Novo dia, novo contador diário
+        this.scheduleNextJitters();
         this.saveCurrentState();
 
         storage.addLog({
@@ -589,8 +599,7 @@ export class ShiftOrchestrator {
       }
 
       await trelloCards.addComment(this.activeCardId, commentText);
-      this.lastCommentTime = Date.now();
-      this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+      this.scheduleNextJitters();
       this.saveCurrentState();
 
       storage.addLog({

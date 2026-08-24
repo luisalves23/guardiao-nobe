@@ -266,7 +266,7 @@ async function promptQuickComment() {
 // Carregar Logs de Auditoria (30 Dias)
 async function loadLogs() {
   try {
-    const res = await fetch('/api/logs?limit=50');
+    const res = await fetch('/api/logs?limit=100');
     const logs = await res.json();
     const container = document.getElementById('logsContainer');
 
@@ -281,36 +281,100 @@ async function loadLogs() {
         let badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
         let icon = 'info';
 
-        if (log.type === 'AUTO_RESCUED') {
-          badgeColor = 'bg-rose-950/80 text-rose-400 border-rose-800';
-          icon = 'shield-alert';
-        } else if (log.type === 'CARD_ROTATED') {
-          badgeColor = 'bg-purple-950/80 text-purple-400 border-purple-800';
-          icon = 'refresh-cw';
-        } else if (log.type === 'COMMENT_SENT') {
-          badgeColor = 'bg-blue-950/80 text-blue-400 border-blue-800';
-          icon = 'message-circle';
-        } else if (log.type === 'SHIFT_STARTED' || log.type === 'RESUMED') {
-          badgeColor = 'bg-emerald-950/80 text-emerald-400 border-emerald-800';
-          icon = 'play-circle';
-        } else if (log.type === 'SHIFT_ENDED' || log.type === 'PAUSED' || log.type === 'LUNCH_STARTED') {
-          badgeColor = 'bg-amber-950/80 text-amber-400 border-amber-800';
-          icon = 'pause-circle';
+        switch (log.type) {
+          case 'AUTO_RESCUED':
+            badgeColor = 'bg-rose-950/80 text-rose-400 border-rose-800';
+            icon = 'shield-alert';
+            break;
+          case 'CARD_ROTATED':
+            badgeColor = 'bg-purple-950/80 text-purple-400 border-purple-800';
+            icon = 'refresh-cw';
+            break;
+          case 'CARD_CREATED':
+            badgeColor = 'bg-sky-950/80 text-sky-400 border-sky-800';
+            icon = 'plus-circle';
+            break;
+          case 'CARD_MOVED':
+            badgeColor = 'bg-blue-950/80 text-blue-400 border-blue-800';
+            icon = 'arrow-right-left';
+            break;
+          case 'CARD_UNARCHIVED':
+            badgeColor = 'bg-fuchsia-950/80 text-fuchsia-400 border-fuchsia-800';
+            icon = 'archive-restore';
+            break;
+          case 'CARD_ADOPTED':
+            badgeColor = 'bg-cyan-950/80 text-cyan-400 border-cyan-800';
+            icon = 'check-circle';
+            break;
+          case 'COMMENT_SENT':
+            badgeColor = 'bg-indigo-950/80 text-indigo-400 border-indigo-800';
+            icon = 'message-square';
+            break;
+          case 'QUESTION_ASKED':
+            badgeColor = 'bg-yellow-950/80 text-yellow-400 border-yellow-800';
+            icon = 'help-circle';
+            break;
+          case 'QUESTION_ANSWERED':
+            badgeColor = 'bg-emerald-950/80 text-emerald-400 border-emerald-800';
+            icon = 'message-circle';
+            break;
+          case 'QUESTION_TIMEOUT':
+            badgeColor = 'bg-rose-950/80 text-rose-400 border-rose-800';
+            icon = 'clock';
+            break;
+          case 'SHIFT_STARTED':
+          case 'RESUMED':
+            badgeColor = 'bg-emerald-950/80 text-emerald-400 border-emerald-800';
+            icon = 'play-circle';
+            break;
+          case 'SHIFT_ENDED':
+          case 'PAUSED':
+          case 'LUNCH_STARTED':
+            badgeColor = 'bg-amber-950/80 text-amber-400 border-amber-800';
+            icon = 'pause-circle';
+            break;
+          case 'MIDNIGHT_ROTATION':
+            badgeColor = 'bg-violet-950/80 text-violet-400 border-violet-800';
+            icon = 'moon';
+            break;
+          case 'COMMAND_RECEIVED':
+            badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
+            icon = 'terminal';
+            break;
+          case 'JITTER_CALCULATED':
+            badgeColor = 'bg-teal-950/80 text-teal-400 border-teal-800';
+            icon = 'timer';
+            break;
+          case 'ERROR':
+            badgeColor = 'bg-red-950/80 text-red-400 border-red-800';
+            icon = 'alert-triangle';
+            break;
         }
 
-        const sourceLabel = log.source ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 ml-2">${log.source}</span>` : '';
+        const sourceLabel = log.source
+          ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 ml-2 font-mono">${log.source}</span>`
+          : '';
+
+        let detailsHtml = '';
+        if (log.details && Object.keys(log.details).length > 0) {
+          const detailsStr = Object.entries(log.details)
+            .map(([k, v]) => `<span class="text-slate-400">${k}:</span> <span class="text-slate-200">${typeof v === 'object' ? JSON.stringify(v) : v}</span>`)
+            .join(' • ');
+          detailsHtml = `<div class="text-[11px] bg-slate-950/50 rounded px-2 py-1 mt-1.5 border border-slate-800/80 font-mono text-slate-400">${detailsStr}</div>`;
+        }
 
         return `
-          <div class="p-3.5 flex items-start space-x-3 hover:bg-slate-800/40 transition">
+          <div class="p-3 sm:p-3.5 flex items-start space-x-3 hover:bg-slate-800/30 transition">
             <div class="p-2 rounded-lg border ${badgeColor} shrink-0 mt-0.5">
               <i data-lucide="${icon}" class="w-4 h-4"></i>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-slate-200">${log.type}${sourceLabel}</span>
-                <span class="text-slate-500">${time}</span>
+                <span class="font-semibold text-slate-200 flex items-center">${log.type}${sourceLabel}</span>
+                <span class="text-slate-500 font-mono text-[11px]">${time}</span>
               </div>
               <p class="text-xs text-slate-300 mt-1">${log.message}</p>
+              ${detailsHtml}
             </div>
           </div>
         `;

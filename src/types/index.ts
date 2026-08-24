@@ -8,15 +8,23 @@ export type LogType =
   | 'PAUSED'
   | 'RESUMED'
   | 'CARD_CREATED'
+  | 'CARD_MOVED'
+  | 'CARD_UNARCHIVED'
   | 'CARD_ROTATED'
+  | 'CARD_ADOPTED'
   | 'COMMENT_SENT'
+  | 'QUESTION_ASKED'
+  | 'QUESTION_ANSWERED'
+  | 'QUESTION_TIMEOUT'
   | 'AUTO_RESCUED'
   | 'MIDNIGHT_ROTATION'
   | 'MANUAL_SYNC'
+  | 'COMMAND_RECEIVED'
+  | 'JITTER_CALCULATED'
   | 'WARNING'
   | 'ERROR';
 
-export type CommentSource = 'WHATSAPP' | 'TELEGRAM' | 'AGENDA' | 'FALLBACK_TEMPLATE' | 'MANUAL' | 'SYSTEM';
+export type CommentSource = 'WHATSAPP' | 'TELEGRAM' | 'AGENDA' | 'FALLBACK_TEMPLATE' | 'MANUAL' | 'SYSTEM' | 'USER_WEB';
 
 export interface AuditLog {
   id: string;

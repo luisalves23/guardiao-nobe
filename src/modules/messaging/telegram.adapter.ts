@@ -119,6 +119,14 @@ export class TelegramAdapter {
     if (this.isAwaitingAnswer && this.pendingQuestionResolve) {
       const resolve = this.pendingQuestionResolve;
       this.clearPendingQuestion();
+
+      StorageService.getInstance().addLog({
+        type: 'QUESTION_ANSWERED',
+        message: `Resposta de atividade recebida do usuário no Telegram: "${cleanText}"`,
+        source: 'TELEGRAM',
+        details: { text: cleanText },
+      });
+
       resolve(cleanText);
 
       const reply = `✅ - [COMENTÁRIO REGISTRADO] - Postado no Trello com sucesso:\n"${cleanText}"`;
@@ -131,6 +139,13 @@ export class TelegramAdapter {
       const parts = cleanText.substring(1).trim().split(/\s+/);
       const cmd = parts[0].toLowerCase().split('@')[0];
       const args = parts.slice(1);
+
+      StorageService.getInstance().addLog({
+        type: 'COMMAND_RECEIVED',
+        message: `Comando "/${cmd}" recebido do Telegram.`,
+        source: 'TELEGRAM',
+        details: { command: cmd, args },
+      });
 
       if (cmd === 'start' || cmd === 'ajuda' || cmd === 'menu') {
         const welcome =
@@ -215,6 +230,12 @@ export class TelegramAdapter {
     this.clearPendingQuestion();
     this.isAwaitingAnswer = true;
 
+    StorageService.getInstance().addLog({
+      type: 'QUESTION_ASKED',
+      message: 'Pergunta de checagem de atividade enviada para o Telegram (janela de 2 min).',
+      source: 'TELEGRAM',
+    });
+
     const questionMessage =
       '⏰ - [CHECAGEM DE ATIVIDADE] - Olá Luís! O que você está executando agora no seu expediente?\n\n' +
       '_(Responda em até 2 minutos para registrar no Trello)_';
@@ -228,6 +249,13 @@ export class TelegramAdapter {
       this.pendingQuestionTimer = setTimeout(async () => {
         if (this.isAwaitingAnswer) {
           this.clearPendingQuestion();
+
+          StorageService.getInstance().addLog({
+            type: 'QUESTION_TIMEOUT',
+            message: 'Limite de 2 minutos expirado no Telegram sem resposta do usuário.',
+            source: 'TELEGRAM',
+          });
+
           await this.sendMessage(
             chatId,
             '⏱️ - [TEMPO ESGOTADO] - Limite de 2 min expirado. Ativando comentário automático de proteção...'
