@@ -53,6 +53,7 @@ export interface AppConfig {
   };
   hourlyRate: number; // 18.00
   notificationPhone: string; // User WhatsApp number for alerts & questions
+  rotationLimitMinutes?: number; // Limite de rotação em minutos (padrão: 230m / ~3h50m)
   fallbackTemplates: string[];
 }
 

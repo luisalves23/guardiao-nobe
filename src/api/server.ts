@@ -171,6 +171,15 @@ export function createServer() {
     }
   });
 
+  app.post('/api/control/rotate', async (_req: Request, res: Response) => {
+    try {
+      await Engine.getInstance().rotateCard();
+      res.json({ success: true, message: 'Rotação de card executada com sucesso.' });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   app.post('/api/control/end', async (_req: Request, res: Response) => {
     try {
       const msg = await Engine.getInstance().endShift();

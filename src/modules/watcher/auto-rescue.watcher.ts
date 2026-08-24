@@ -86,9 +86,10 @@ export class AutoRescueWatcher {
         else if (card.idList !== config.trello.workingListId) {
           const now = Date.now();
           const cardAgeMinutes = ctx.cardStartTime ? (now - ctx.cardStartTime) / (1000 * 60) : 0;
+          const rotationLimitMinutes = config.rotationLimitMinutes || 230;
 
-          if (cardAgeMinutes >= 230) {
-            console.log('[AutoRescueWatcher] Card completou 4h. Criando novo card em Trabalhando Agora...');
+          if (cardAgeMinutes >= rotationLimitMinutes) {
+            console.log('[AutoRescueWatcher] Card completou tempo de rotação. Criando novo card em Trabalhando Agora...');
             const dateFormatted = formatTodayDate(new Date());
             const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
 
@@ -102,24 +103,24 @@ export class AutoRescueWatcher {
 
             await trelloCards.addComment(
               newCard.id,
-              'Continuidade do expediente - Novo card ativo em Trabalhando Agora.'
+              'Iniciando novo bloco de atividades.'
             );
 
             storage.addLog({
               type: 'CARD_ROTATED',
-              message: `Card anterior completou limite de 4h. Novo card "${cardTitle}" aberto.`,
+              message: `Card anterior completou limite de tempo. Novo card "${cardTitle}" aberto.`,
               source: 'SYSTEM',
               details: { newCardId: newCard.id, cardTitle },
             });
 
             await dispatcher.broadcastAlert(
-              `🔄 *[Guardião Nobe]* Card anterior atingiu 4h e foi arquivado.\nUm novo card (*${cardTitle}*) já foi aberto em "Trabalhando Agora" para manter suas horas ativas!`
+              `🔄 *[Guardião Nobe]* Card anterior atingiu o limite de tempo e foi arquivado.\nUm novo card (*${cardTitle}*) já foi aberto em "Trabalhando Agora" para manter suas horas ativas!`
             );
           } else {
             console.log('[AutoRescueWatcher] Card com tempo restante. Restaurando para Trabalhando Agora...');
             await trelloCards.moveCard(ctx.activeCardId, config.trello.workingListId);
 
-            const resumeComment = 'Restaurando card em Trabalhando Agora - Tempo restante disponível.';
+            const resumeComment = 'Retomando as tarefas.';
             await trelloCards.addComment(ctx.activeCardId, resumeComment);
 
             ctx.onCardRescued(resumeComment);

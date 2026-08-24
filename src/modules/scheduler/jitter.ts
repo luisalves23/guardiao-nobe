@@ -1,3 +1,5 @@
+import { StorageService } from '../../services/storage.service.js';
+
 export function getCommentJitterMs(): number {
   // Entre 20 e 25 minutos
   const minMs = 20 * 60 * 1000;
@@ -6,9 +8,19 @@ export function getCommentJitterMs(): number {
 }
 
 export function getRotationJitterMs(): number {
-  // Entre 230 e 238 minutos (3h50 a 3h58)
-  const minMs = 230 * 60 * 1000;
-  const maxMs = 238 * 60 * 1000;
+  const config = StorageService.getInstance().getConfig();
+  const configuredMinutes = config.rotationLimitMinutes || 230;
+
+  // Se o usuário configurou um valor de teste pequeno (ex: 2 min a 15 min), jitter proporcional de 0-30s
+  if (configuredMinutes <= 15) {
+    const baseMs = configuredMinutes * 60 * 1000;
+    const jitterMs = Math.floor(Math.random() * 30 * 1000);
+    return baseMs + jitterMs;
+  }
+
+  // Padrão de produção: Entre 230 e 238 minutos (3h50 a 3h58)
+  const minMs = configuredMinutes * 60 * 1000;
+  const maxMs = (configuredMinutes + 8) * 60 * 1000;
   return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
 }
 

@@ -501,10 +501,10 @@ async function loadConfig() {
     document.getElementById('cfgMemberId').value = configData.trello.memberId || '';
     document.getElementById('cfgUserName').value = configData.trello.userName || 'Luís Alves';
     document.getElementById('cfgHourlyRate').value = configData.hourlyRate || 18;
+    document.getElementById('cfgRotationLimitMinutes').value = configData.rotationLimitMinutes || 230;
     document.getElementById('cfgPhone').value = configData.notificationPhone || '';
 
     document.getElementById('cfgTelegramToken').value = (configData.telegram && configData.telegram.botToken) || '';
-    document.getElementById('cfgTelegramChatId').value = (configData.telegram && configData.telegram.chatId) || '';
 
     // Atualiza preview da coluna mensal
     const monthsPt = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -529,10 +529,11 @@ async function saveSettings(e) {
       userName: document.getElementById('cfgUserName').value.trim(),
     },
     hourlyRate: Number(document.getElementById('cfgHourlyRate').value),
+    rotationLimitMinutes: Number(document.getElementById('cfgRotationLimitMinutes').value) || 230,
     notificationPhone: document.getElementById('cfgPhone').value.trim(),
     telegram: {
       botToken: document.getElementById('cfgTelegramToken').value.trim(),
-      chatId: document.getElementById('cfgTelegramChatId').value.trim(),
+      chatId: (configData.telegram && configData.telegram.chatId) || '',
       enabled: !!document.getElementById('cfgTelegramToken').value.trim(),
     },
   };

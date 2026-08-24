@@ -144,7 +144,16 @@ export class TelegramAdapter {
       return reply;
     }
 
-    const defaultReply = '🤖 Olá Luís! Sou o Guardião Nobe. Use /status ou aguarde minha checagem periódica.';
+    // Se o usuário enviar qualquer texto livre, trata como comentário no card ativo
+    if (this.commandHandler) {
+      const reply = await this.commandHandler('comentar', [cleanText]);
+      if (reply) {
+        await this.sendMessage(chatId, reply);
+        return reply;
+      }
+    }
+
+    const defaultReply = '🤖 Olá Luís! Sou o Guardião Nobe. Use /status ou envie uma mensagem para comentar no card ativo.';
     await this.sendMessage(chatId, defaultReply);
     return defaultReply;
   }
