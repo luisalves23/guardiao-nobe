@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: guardiao-nobe
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: TRELLO_API_KEY
+        sync: false
+      - key: TRELLO_TOKEN
+        sync: false
+      - key: TRELLO_BOARD_ID
+        sync: false
+      - key: TRELLO_WORKING_LIST_ID
+        sync: false
+      - key: TRELLO_WAIT_LIST_ID
+        sync: false
+      - key: TRELLO_MEMBER_ID
+        sync: false
+      - key: TRELLO_USER_NAME
+        value: Luis Alves
+      - key: WHATSAPP_NOTIFICATION_PHONE
+        sync: false

@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  guardiao-nobe:
+    build: .
+    container_name: guardiao_nobe_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+    volumes:
+      # Persistência de dados locais (configurações, logs de 30 dias e agenda)
+      - ./data:/app/data
