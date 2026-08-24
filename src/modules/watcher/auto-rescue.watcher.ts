@@ -17,6 +17,7 @@ export interface WatcherContext {
 
 export class AutoRescueWatcher {
   private static instance: AutoRescueWatcher;
+  private lastRescueCommentTime: number = 0;
 
   private constructor() {}
 
@@ -39,6 +40,11 @@ export class AutoRescueWatcher {
       return;
     }
 
+    // Regra Fundamental: Se o usuário estiver em PAUSED, LUNCH ou IDLE, o Watcher NÃO deve forçar trabalho nem mover cards
+    if (ctx.state !== 'WORKING') {
+      return;
+    }
+
     try {
       // 1. Busca os cards abertos em "Trabalhando Agora" no Trello
       const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
@@ -47,144 +53,122 @@ export class AutoRescueWatcher {
       if (cardsInWorking && cardsInWorking.length > 0) {
         const topCard = cardsInWorking[0];
 
-        // Se o sistema estava em IDLE ou PAUSED, sincroniza e ativa o expediente imediatamente
-        if (ctx.state === 'IDLE') {
-          console.log(`[AutoRescueWatcher] ⚡ Card aberto "${topCard.name}" detectado em Trabalhando Agora. Ativando expediente...`);
-          ctx.onCardAdopted(topCard.id, topCard.name);
-          storage.addLog({
-            type: 'SHIFT_STARTED',
-            message: `Card aberto "${topCard.name}" detectado em Trabalhando Agora. Expediente sincronizado e ativado.`,
-            source: 'SYSTEM',
-            details: { cardId: topCard.id, cardTitle: topCard.name },
-          });
-
-          await dispatcher.broadcastAlert(
-            `🚀 - [SINCRONIZAÇÃO AUTOMÁTICA] - Card "${topCard.name}" detectado aberto no Trello. Expediente ativado e contagem iniciada!`
-          );
-        } else if (ctx.activeCardId !== topCard.id) {
-          // Adota o ID do card atual se mudou
+        // Sincroniza o ID do card ativo caso seja diferente
+        if (ctx.activeCardId !== topCard.id) {
           ctx.onCardAdopted(topCard.id, topCard.name);
         }
 
-        // Remove eventuais cards duplicados adicionais para a pasta do mês
+        // Se houver mais de 1 card concorrente em "Trabalhando Agora", move os excedentes para a pasta do mês
         if (cardsInWorking.length > 1 && config.trello.boardId) {
           const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
           for (let i = 1; i < cardsInWorking.length; i++) {
+            console.log(`[AutoRescueWatcher] Movendo card concorrente excedente "${cardsInWorking[i].name}" para a pasta do mês...`);
             await trelloCards.moveCard(cardsInWorking[i].id, monthlyList.id);
           }
         }
         return;
       }
 
-      // CENÁRIO 2: A coluna "Trabalhando Agora" está vazia, mas o sistema está no estado WORKING
-      if (ctx.state === 'WORKING') {
-        if (ctx.activeCardId) {
-          try {
-            const card = await trelloCards.getCard(ctx.activeCardId);
+      // CENÁRIO 2: O sistema está no estado WORKING, mas não há cards na coluna "Trabalhando Agora"
+      if (ctx.activeCardId) {
+        try {
+          const card = await trelloCards.getCard(ctx.activeCardId);
 
-            // Caso 2.1: O card foi arquivado
-            if (card.closed) {
-              console.warn('[AutoRescueWatcher] 🚨 Card arquivado detectado! Desarquivando em 3s...');
-              await trelloCards.unarchiveCard(ctx.activeCardId, config.trello.workingListId);
+          // Caso 2.1: Card foi arquivado
+          if (card.closed) {
+            console.warn('[AutoRescueWatcher] 🚨 Card arquivado detectado! Desarquivando em 3s...');
+            await trelloCards.unarchiveCard(ctx.activeCardId, config.trello.workingListId);
 
-              const resumeComment = 'Retomando as tarefas.';
-              await trelloCards.addComment(ctx.activeCardId, resumeComment);
-              ctx.onCardRescued(resumeComment);
+            storage.addLog({
+              type: 'AUTO_RESCUED',
+              message: `Card "${card.name}" estava arquivado. Desarquivado e restaurado em Trabalhando Agora.`,
+              source: 'SYSTEM',
+            });
 
-              storage.addLog({
-                type: 'AUTO_RESCUED',
-                message: `Card "${card.name}" estava arquivado. Desarquivado e restaurado em Trabalhando Agora.`,
-                source: 'SYSTEM',
-              });
+            await dispatcher.broadcastAlert(
+              `🚨 - [CARD DESARQUIVADO] - O card havia sido arquivado. O Guardião desarquivou e restaurou para "Trabalhando Agora" para manter suas horas seguras!`
+            );
+            return;
+          }
 
-              await dispatcher.broadcastAlert(
-                `🚨 - [CARD DESARQUIVADO] - O card havia sido arquivado! O Guardião desarquivou e restaurou para "Trabalhando Agora" em 3s.`
-              );
-              return;
-            }
+          // Caso 2.2: Card movido para "EM ESPERA" ("A Presidência")
+          if (config.trello.waitListId && card.idList === config.trello.waitListId) {
+            console.warn('[AutoRescueWatcher] 🚨 Card em "EM ESPERA". Executando Auto-Resgate em 3s...');
+            await trelloCards.moveCard(ctx.activeCardId, config.trello.workingListId);
 
-            // Caso 2.2: O card foi movido para "EM ESPERA" ("A Presidência")
-            if (config.trello.waitListId && card.idList === config.trello.waitListId) {
-              console.warn('[AutoRescueWatcher] 🚨 Card em "EM ESPERA". Executando Auto-Resgate em 3s...');
-              await trelloCards.moveCard(ctx.activeCardId, config.trello.workingListId);
-
+            // Comentário com cooldown de 5 minutos para evitar flood
+            const now = Date.now();
+            if (now - this.lastRescueCommentTime > 5 * 60 * 1000) {
+              this.lastRescueCommentTime = now;
               const rescueComment = agenda.getRescueComment();
               await trelloCards.addComment(ctx.activeCardId, rescueComment);
               ctx.onCardRescued(rescueComment);
+            }
+
+            storage.addLog({
+              type: 'AUTO_RESCUED',
+              message: `Card resgatado de "EM ESPERA" e reativado em "Trabalhando Agora".`,
+              source: 'FALLBACK_TEMPLATE',
+            });
+
+            await dispatcher.broadcastAlert(
+              `🚨 - [AUTO-RESGATE ATIVADO] - O robô "A Presidência" moveu seu card para "EM ESPERA". Restaurado para "Trabalhando Agora" em 3s.`
+            );
+            return;
+          }
+
+          // Caso 2.3: Card movido para outra pasta (ex: Pasta do Mês) durante o expediente WORKING
+          if (card.idList !== config.trello.workingListId) {
+            const now = Date.now();
+            const cardAgeMinutes = ctx.cardStartTime ? (now - ctx.cardStartTime) / (1000 * 60) : 0;
+            const rotationLimitMinutes = config.rotationLimitMinutes || 230;
+
+            if (cardAgeMinutes >= rotationLimitMinutes) {
+              console.log('[AutoRescueWatcher] Card completou tempo de rotação. Criando novo card em Trabalhando Agora...');
+              const dateFormatted = formatTodayDate(new Date());
+              const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
+
+              const newCard = await trelloCards.createCard(
+                config.trello.workingListId,
+                cardTitle,
+                config.trello.memberId
+              );
+
+              ctx.onCardRotated(newCard.id, cardTitle);
+              await trelloCards.addComment(newCard.id, 'Iniciando novo bloco de atividades.');
 
               storage.addLog({
-                type: 'AUTO_RESCUED',
-                message: `Card resgatado de "EM ESPERA" e reativado em "Trabalhando Agora" com: "${rescueComment}"`,
-                source: 'FALLBACK_TEMPLATE',
+                type: 'CARD_ROTATED',
+                message: `Card anterior completou limite de tempo. Novo card "${cardTitle}" aberto.`,
+                source: 'SYSTEM',
+                details: { newCardId: newCard.id, cardTitle },
               });
 
               await dispatcher.broadcastAlert(
-                `🚨 - [AUTO-RESGATE ATIVADO] - O robô "A Presidência" moveu seu card para "EM ESPERA". Restaurado para "Trabalhando Agora" em 3s e comentário postado.`
+                `🔄 - [ROTAÇÃO DE CARD] - Card anterior arquivado. Novo card (*${cardTitle}*) aberto em "Trabalhando Agora"!`
               );
-              return;
+            } else {
+              console.log('[AutoRescueWatcher] Card com tempo restante. Restaurando para Trabalhando Agora sem spam...');
+              await trelloCards.moveCard(ctx.activeCardId, config.trello.workingListId);
+
+              storage.addLog({
+                type: 'RESUMED',
+                message: 'Card restaurado para Trabalhando Agora (tempo restante disponível).',
+                source: 'SYSTEM',
+              });
             }
-
-            // Caso 2.3: O card foi movido para a Pasta do Mês ou outra coluna
-            if (card.idList !== config.trello.workingListId) {
-              const now = Date.now();
-              const cardAgeMinutes = ctx.cardStartTime ? (now - ctx.cardStartTime) / (1000 * 60) : 0;
-              const rotationLimitMinutes = config.rotationLimitMinutes || 230;
-
-              if (cardAgeMinutes >= rotationLimitMinutes) {
-                console.log('[AutoRescueWatcher] Card completou tempo de rotação. Criando novo card em Trabalhando Agora...');
-                const dateFormatted = formatTodayDate(new Date());
-                const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
-
-                const newCard = await trelloCards.createCard(
-                  config.trello.workingListId,
-                  cardTitle,
-                  config.trello.memberId
-                );
-
-                ctx.onCardRotated(newCard.id, cardTitle);
-                await trelloCards.addComment(newCard.id, 'Iniciando novo bloco de atividades.');
-
-                storage.addLog({
-                  type: 'CARD_ROTATED',
-                  message: `Card anterior completou limite de tempo. Novo card "${cardTitle}" aberto.`,
-                  source: 'SYSTEM',
-                  details: { newCardId: newCard.id, cardTitle },
-                });
-
-                await dispatcher.broadcastAlert(
-                  `🔄 - [ROTAÇÃO DE CARD] - Card anterior arquivado. Novo card (*${cardTitle}*) aberto em "Trabalhando Agora"!`
-                );
-              } else {
-                console.log('[AutoRescueWatcher] Card com tempo restante. Restaurando para Trabalhando Agora...');
-                await trelloCards.moveCard(ctx.activeCardId, config.trello.workingListId);
-
-                const resumeComment = 'Retomando as tarefas.';
-                await trelloCards.addComment(ctx.activeCardId, resumeComment);
-                ctx.onCardRescued(resumeComment);
-
-                storage.addLog({
-                  type: 'RESUMED',
-                  message: 'Card restaurado para Trabalhando Agora (tempo restante disponível).',
-                  source: 'SYSTEM',
-                });
-
-                await dispatcher.broadcastAlert(
-                  `⚠️ - [CARD RESTAURADO] - Card detectado fora da coluna de trabalho durante o expediente. Restaurado para "Trabalhando Agora"!`
-                );
-              }
-              return;
-            }
-          } catch {
-            // Se o getCard falhou (ex: card deletado permanentemente)
-            const dateFormatted = formatTodayDate(new Date());
-            const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
-            const newCard = await trelloCards.createCard(
-              config.trello.workingListId,
-              cardTitle,
-              config.trello.memberId
-            );
-            ctx.onCardRotated(newCard.id, cardTitle);
+            return;
           }
+        } catch {
+          // Se o getCard falhou (ex: card deletado permanentemente)
+          const dateFormatted = formatTodayDate(new Date());
+          const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
+          const newCard = await trelloCards.createCard(
+            config.trello.workingListId,
+            cardTitle,
+            config.trello.memberId
+          );
+          ctx.onCardRotated(newCard.id, cardTitle);
         }
       }
     } catch (err: any) {

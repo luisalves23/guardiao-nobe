@@ -235,6 +235,7 @@ async function controlAction(action) {
     if (!data.success) {
       alert(`Erro: ${data.error || 'Falha ao executar ação'}`);
     }
+    await loadStatus();
     loadLogs();
   } catch (err) {
     alert(`Erro na requisição: ${err.message}`);
