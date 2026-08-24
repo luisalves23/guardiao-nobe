@@ -5,6 +5,7 @@ export interface TrelloCard {
   name: string;
   idList: string;
   idBoard: string;
+  closed?: boolean;
   idMembers?: string[];
   url?: string;
 }
@@ -60,6 +61,19 @@ export class TrelloCardsManager {
         idList: targetListId,
       },
     });
+    return res.data;
+  }
+
+  public async unarchiveCard(cardId: string, targetListId?: string): Promise<TrelloCard> {
+    const client = TrelloClient.getInstance();
+    const params: any = {
+      ...client.getAuthParams(),
+      closed: false,
+    };
+    if (targetListId) {
+      params.idList = targetListId;
+    }
+    const res = await client.getHttp().put(`/cards/${cardId}`, null, { params });
     return res.data;
   }
 

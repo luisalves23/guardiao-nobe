@@ -62,8 +62,27 @@ export class AutoRescueWatcher {
       try {
         const card = await trelloCards.getCard(ctx.activeCardId);
 
+        // Caso 0: Card arquivado/fechado pelo usuário ou por terceiro
+        if (card.closed) {
+          console.warn('[AutoRescueWatcher] 🚨 Card arquivado detectado! Desarquivando em 3s...');
+          await trelloCards.unarchiveCard(ctx.activeCardId, config.trello.workingListId);
+
+          const resumeComment = 'Retomando as tarefas.';
+          await trelloCards.addComment(ctx.activeCardId, resumeComment);
+          ctx.onCardRescued(resumeComment);
+
+          storage.addLog({
+            type: 'AUTO_RESCUED',
+            message: `Card "${card.name}" estava arquivado. Desarquivado e restaurado em Trabalhando Agora.`,
+            source: 'SYSTEM',
+          });
+
+          await dispatcher.broadcastAlert(
+            `🚨 - [CARD DESARQUIVADO] - O card havia sido arquivado! O Guardião desarquivou e restaurou para "Trabalhando Agora" em 3s para suas horas não serem descontadas.`
+          );
+        }
         // Caso A: Card movido para a coluna "EM ESPERA" ("A Presidência")
-        if (config.trello.waitListId && card.idList === config.trello.waitListId) {
+        else if (config.trello.waitListId && card.idList === config.trello.waitListId) {
           console.warn('[AutoRescueWatcher] 🚨 Card em "EM ESPERA". Executando Auto-Resgate em 3s...');
           await trelloCards.moveCard(ctx.activeCardId, config.trello.workingListId);
 
@@ -136,8 +155,22 @@ export class AutoRescueWatcher {
             );
           }
         }
-      } catch {
-        // Tratamento de erro suave
+      } catch (err: any) {
+        // Se o card não for encontrado (ex: deletado permanentemente), verifica se há cards na coluna de trabalho
+        try {
+          const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
+          if (cardsInWorking && cardsInWorking.length > 0) {
+            const found = cardsInWorking[0];
+            ctx.onCardAdopted(found.id, found.name);
+          } else {
+            const dateFormatted = formatTodayDate(new Date());
+            const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
+            const newCard = await trelloCards.createCard(config.trello.workingListId, cardTitle, config.trello.memberId);
+            ctx.onCardRotated(newCard.id, cardTitle);
+          }
+        } catch {
+          // Silêncio
+        }
       }
     }
   }
