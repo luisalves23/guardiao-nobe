@@ -229,9 +229,16 @@ export function createServer() {
   // Servir arquivos estáticos da interface web
   const publicDir = path.resolve(process.cwd(), 'public');
   if (fs.existsSync(publicDir)) {
-    app.use(express.static(publicDir));
-    app.get('*', (_req: Request, res: Response) => {
+    app.use(express.static(publicDir, { index: 'index.html' }));
+    app.get('/', (_req: Request, res: Response) => {
       res.sendFile(path.join(publicDir, 'index.html'));
+    });
+    app.get('*', (req: Request, res: Response) => {
+      if (!req.path.startsWith('/api')) {
+        res.sendFile(path.join(publicDir, 'index.html'));
+      } else {
+        res.status(404).json({ error: 'API route not found' });
+      }
     });
   }
 
