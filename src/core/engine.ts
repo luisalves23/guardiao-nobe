@@ -1,6 +1,7 @@
 import { StorageService } from '../services/storage.service.js';
 import { TrelloService } from '../services/trello.service.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
+import { TelegramService } from '../services/telegram.service.js';
 import { getCommentJitterMs, getRotationJitterMs, formatTodayDate } from './jitter.js';
 import { ShiftState, LiveStatus, CommentSource } from '../types/index.js';
 
@@ -34,18 +35,27 @@ export class Engine {
 
   public async initialize(): Promise<void> {
     console.log('[Engine] Inicializando motor de controle do Guardião Nobe (Polling: 3 segundos)...');
-    const storage = StorageService.getInstance();
     const whatsapp = WhatsAppService.getInstance();
+    const telegram = TelegramService.getInstance();
 
-    whatsapp.setCommandHandler(async (cmd, args) => {
+    const commandHandler = async (cmd: string, args: string[]) => {
       return this.handleWhatsAppCommand(cmd, args);
-    });
+    };
+
+    whatsapp.setCommandHandler(commandHandler);
+    telegram.setCommandHandler(commandHandler);
+    await telegram.initialize();
 
     // Loop ultra-rápido de monitoramento a cada 3 segundos
     const timer = setInterval(() => {
       this.tick().catch((err) => console.error('[Engine] Erro no tick:', err.message));
     }, 3000);
     timer.unref();
+  }
+
+  private async broadcastAlert(text: string) {
+    await WhatsAppService.getInstance().sendAlert(text);
+    await TelegramService.getInstance().sendAlert(text);
   }
 
   public getStatus(): LiveStatus {
@@ -127,7 +137,7 @@ export class Engine {
         details: { cardId: card.id, cardTitle },
       });
 
-      await whatsapp.sendAlert(
+      await this.broadcastAlert(
         `🚀 *[Guardião Nobe]* Expediente ativo no Trello!\n\n📋 *Card:* ${cardTitle}\n⏳ *Próximo comentário:* em ~20-25min\n🔄 *Rotação prevista:* em ~3h50min`
       );
 
@@ -158,7 +168,7 @@ export class Engine {
       source: 'SYSTEM',
     });
 
-    await WhatsAppService.getInstance().sendAlert(
+    await this.broadcastAlert(
       '⏸️ *[Guardião Nobe]* Expediente pausado.'
     );
 
@@ -190,7 +200,7 @@ export class Engine {
       source: 'SYSTEM',
     });
 
-    await WhatsAppService.getInstance().sendAlert(
+    await this.broadcastAlert(
       '▶️ *[Guardião Nobe]* Expediente retomado com sucesso!'
     );
 
@@ -209,7 +219,7 @@ export class Engine {
       source: 'SYSTEM',
     });
 
-    await WhatsAppService.getInstance().sendAlert(
+    await this.broadcastAlert(
       '🍽️ *[Guardião Nobe]* Pausa para almoço iniciada.'
     );
 
@@ -245,7 +255,7 @@ export class Engine {
       source: 'SYSTEM',
     });
 
-    await WhatsAppService.getInstance().sendAlert(
+    await this.broadcastAlert(
       `🏁 *[Guardião Nobe]* Expediente encerrado!\n\n⏱️ *Total de horas trabalhadas:* ${(this.todayWorkedMinutes / 60).toFixed(1)}h\n💰 *Ganhos de hoje:* R$ ${((this.todayWorkedMinutes / 60) * config.hourlyRate).toFixed(2)}`
     );
 
@@ -314,7 +324,7 @@ export class Engine {
         details: { newCardId: newCard.id, cardTitle },
       });
 
-      await whatsapp.sendAlert(
+      await this.broadcastAlert(
         `🔄 *[Guardião Nobe]* ROTAÇÃO DE CARD REALIZADA!\n\nSeu card anterior atingiu ~3h55 e foi movido para a coluna "${monthlyList.name}".\nUm novo card (*${cardTitle}*) já está aberto em "Trabalhando Agora" com contagem contínua!`
       );
     } catch (err: any) {
@@ -324,7 +334,7 @@ export class Engine {
         message: `Erro na rotação do card: ${err.message}`,
         source: 'SYSTEM',
       });
-      await whatsapp.sendAlert(`🚨 *[Guardião Nobe]* Falha ao rotacionar card no Trello: ${err.message}`);
+      await this.broadcastAlert(`🚨 *[Guardião Nobe]* Falha ao rotacionar card no Trello: ${err.message}`);
     } finally {
       this.isProcessingRotation = false;
       this.broadcastStatus();
@@ -348,14 +358,24 @@ export class Engine {
       let commentText: string | null = null;
       let source: CommentSource = 'WHATSAPP';
 
-      // 1. Tenta perguntar via WhatsApp com timeout estrito de 2 minutos (120.000 ms)
-      const userReply = await whatsapp.askActivityQuestion(120000, () => {
-        console.log('[Engine] Timeout de 2 min do WhatsApp atingido. Ativando fallback...');
-      });
+      // 1. Tenta perguntar via Telegram ou WhatsApp com timeout estrito de 2 minutos (120.000 ms)
+      const telegram = TelegramService.getInstance();
+      let userReply: string | null = null;
+
+      if (telegram.isConfigured()) {
+        userReply = await telegram.askActivityQuestion(120000, () => {
+          console.log('[Engine] Timeout de 2 min do Telegram atingido. Ativando fallback...');
+        });
+        if (userReply) source = 'WHATSAPP'; // Interativo
+      } else {
+        userReply = await whatsapp.askActivityQuestion(120000, () => {
+          console.log('[Engine] Timeout de 2 min do WhatsApp atingido. Ativando fallback...');
+        });
+        if (userReply) source = 'WHATSAPP';
+      }
 
       if (userReply && userReply.trim()) {
         commentText = userReply.trim();
-        source = 'WHATSAPP';
       } else {
         // 2. Fallback: Agenda
         const agenda = storage.getAgenda();
@@ -376,10 +396,10 @@ export class Engine {
           source = 'FALLBACK_TEMPLATE';
         }
 
-        // Notifica no WhatsApp que o fallback foi usado
-        await whatsapp.sendAlert(
-          `⏱️ *[Guardião Nobe]* Limite de 2 min expirado.\nPara não perder tempo na Nobe, comentei automaticamente no Trello:\n\n💬 _"${commentText}"_`
-        );
+        // Notifica nos canais que o fallback foi usado
+        const fallbackMsg = `⏱️ *[Guardião Nobe]* Limite de 2 min expirado.\nPara não perder tempo na Nobe, comentei automaticamente no Trello:\n\n💬 _"${commentText}"_`;
+        await whatsapp.sendAlert(fallbackMsg);
+        await telegram.sendAlert(fallbackMsg);
       }
 
       // Publica no Trello
@@ -491,7 +511,7 @@ export class Engine {
             source: 'FALLBACK_TEMPLATE',
           });
 
-          await WhatsAppService.getInstance().sendAlert(
+          await this.broadcastAlert(
             `🚨 *[AUTO-RESGATE EXECUTADO EM 3s]*\n\nO robô "A Presidência" moveu seu card para *"EM ESPERA"*!\nO Guardião Nobe detectou instantaneamente, restaurou para *"Trabalhando Agora"* e postou:\n💬 _"${rescueComment}"_\n\nSuas horas continuam seguras sem desconto!`
           );
         }

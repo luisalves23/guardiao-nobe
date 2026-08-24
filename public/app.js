@@ -494,6 +494,9 @@ async function loadConfig() {
     document.getElementById('cfgHourlyRate').value = configData.hourlyRate || 18;
     document.getElementById('cfgPhone').value = configData.notificationPhone || '';
 
+    document.getElementById('cfgTelegramToken').value = (configData.telegram && configData.telegram.botToken) || '';
+    document.getElementById('cfgTelegramChatId').value = (configData.telegram && configData.telegram.chatId) || '';
+
     // Atualiza preview da coluna mensal
     const monthsPt = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
     const currentMonth = monthsPt[new Date().getMonth()];
@@ -518,6 +521,11 @@ async function saveSettings(e) {
     },
     hourlyRate: Number(document.getElementById('cfgHourlyRate').value),
     notificationPhone: document.getElementById('cfgPhone').value.trim(),
+    telegram: {
+      botToken: document.getElementById('cfgTelegramToken').value.trim(),
+      chatId: document.getElementById('cfgTelegramChatId').value.trim(),
+      enabled: !!document.getElementById('cfgTelegramToken').value.trim(),
+    },
   };
 
   try {
