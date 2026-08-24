@@ -91,8 +91,9 @@ export class Engine {
     const orchestrator = ShiftOrchestrator.getInstance();
     const watcher = AutoRescueWatcher.getInstance();
 
-    // 1. Atualiza tempo acumulado
+    // 1. Atualiza tempo acumulado e checa virada de meia-noite
     orchestrator.updateTime(elapsedMinutes);
+    await orchestrator.handleMidnightDateShift();
 
     // 2. Rotação de 4 Horas (3h50 a 3h58)
     const nextRotation = orchestrator.getNextRotationTargetTime();

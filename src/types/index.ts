@@ -11,11 +11,12 @@ export type LogType =
   | 'CARD_ROTATED'
   | 'COMMENT_SENT'
   | 'AUTO_RESCUED'
+  | 'MIDNIGHT_ROTATION'
   | 'MANUAL_SYNC'
   | 'WARNING'
   | 'ERROR';
 
-export type CommentSource = 'WHATSAPP' | 'AGENDA' | 'FALLBACK_TEMPLATE' | 'MANUAL' | 'SYSTEM';
+export type CommentSource = 'WHATSAPP' | 'TELEGRAM' | 'AGENDA' | 'FALLBACK_TEMPLATE' | 'MANUAL' | 'SYSTEM';
 
 export interface AuditLog {
   id: string;
@@ -28,9 +29,14 @@ export interface AuditLog {
 
 export interface AgendaItem {
   id: string;
-  timeSlot?: string; // e.g. "08:00 - 10:00"
-  topic: string; // e.g. "Refatoração do módulo de autenticação"
+  timeSlot?: string;
+  topic: string;
   completed?: boolean;
+}
+
+export interface ActionMessageConfig {
+  text: string;
+  enabled: boolean;
 }
 
 export interface AppConfig {
@@ -39,21 +45,29 @@ export interface AppConfig {
     token: string;
     boardId: string;
     workingListId: string;
-    waitListId: string; // "EM ESPERA" list ID
+    waitListId: string;
     memberId: string;
-    userName: string; // "Luís Alves"
+    userName: string;
   };
   schedule: {
-    workStart: string; // "07:00"
-    workEnd: string; // "18:00"
-    workDays: number[]; // [1, 2, 3, 4, 5] (Mon-Fri)
+    workStart: string;
+    workEnd: string;
+    workDays: number[];
     lunchEnabled: boolean;
-    lunchStart: string; // "12:00"
-    lunchEnd: string; // "13:00"
+    lunchStart: string;
+    lunchEnd: string;
   };
-  hourlyRate: number; // 18.00
-  notificationPhone: string; // User WhatsApp number for alerts & questions
-  rotationLimitMinutes?: number; // Limite de rotação em minutos (padrão: 230m / ~3h50m)
+  hourlyRate: number;
+  notificationPhone: string;
+  rotationLimitMinutes?: number; // Padrão: 230 (~3h50m)
+  actionMessages: {
+    start: ActionMessageConfig;
+    pause: ActionMessageConfig;
+    resume: ActionMessageConfig;
+    lunch: ActionMessageConfig;
+    end: ActionMessageConfig;
+    rotate: ActionMessageConfig;
+  };
   fallbackTemplates: string[];
 }
 

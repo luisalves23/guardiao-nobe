@@ -134,6 +134,14 @@ export function createServer() {
     res.json(StorageService.getInstance().getLogs(limit));
   });
 
+  app.get('/api/logs/export', (_req: Request, res: Response) => {
+    const logs = StorageService.getInstance().getAllLogs();
+    const dateStr = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="guardiao_nobe_logs_${dateStr}.json"`);
+    res.send(JSON.stringify(logs, null, 2));
+  });
+
   // 7. Controles de Expediente
   app.post('/api/control/start', async (_req: Request, res: Response) => {
     try {

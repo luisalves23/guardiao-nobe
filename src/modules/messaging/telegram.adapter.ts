@@ -5,7 +5,8 @@ export class TelegramAdapter {
   private static instance: TelegramAdapter;
   private isPolling = false;
   private lastUpdateId = 0;
-  private pendingQuestionResolve: ((answer: string) => void) | null = null;
+  private isAwaitingAnswer = false;
+  private pendingQuestionResolve: ((answer: string | null) => void) | null = null;
   private pendingQuestionTimer: NodeJS.Timeout | null = null;
   private commandHandler: ((command: string, args: string[]) => Promise<string | void>) | null = null;
 
@@ -43,11 +44,16 @@ export class TelegramAdapter {
     try {
       const res = await axios.get(`https://api.telegram.org/bot${token}/getMe`, { timeout: 8000 });
       if (res.data?.ok) {
-        console.log(`[Telegram] Bot conectado com sucesso: @${res.data.result.username}`);
+        console.log(`[TelegramAdapter] Bot conectado com sucesso: @${res.data.result.username}`);
+        StorageService.getInstance().addLog({
+          type: 'MANUAL_SYNC',
+          message: `Telegram Bot @${res.data.result.username} conectado com sucesso.`,
+          source: 'TELEGRAM',
+        });
         this.startPolling();
       }
     } catch (err: any) {
-      console.error('[Telegram] Falha ao conectar ao bot:', err.message);
+      console.error('[TelegramAdapter] Falha ao conectar ao bot:', err.message);
     }
   }
 
@@ -84,14 +90,14 @@ export class TelegramAdapter {
             StorageService.getInstance().saveConfig({
               telegram: { botToken: token, chatId, enabled: true },
             } as any);
-            console.log(`[Telegram] Chat ID salvo automaticamente: ${chatId}`);
+            console.log(`[TelegramAdapter] Chat ID salvo automaticamente: ${chatId}`);
           }
 
           await this.handleIncomingMessage(chatId, text);
         }
       }
     } catch {
-      // Ignora timeouts de polling
+      // Ignora timeouts de long polling
     }
 
     if (this.isPolling) {
@@ -103,24 +109,41 @@ export class TelegramAdapter {
     const cleanText = text.trim();
     if (!cleanText) return;
 
+    StorageService.getInstance().addLog({
+      type: 'COMMENT_SENT',
+      message: `Mensagem recebida do Telegram: "${cleanText}" (Aguardando resposta: ${this.isAwaitingAnswer})`,
+      source: 'TELEGRAM',
+    });
+
+    // 1. Se estiver aguardando a resposta da pergunta de atividade
+    if (this.isAwaitingAnswer && this.pendingQuestionResolve) {
+      const resolve = this.pendingQuestionResolve;
+      this.clearPendingQuestion();
+      resolve(cleanText);
+
+      const reply = `✅ *Entendido! Comentário registrado no Trello:*\n"${cleanText}"`;
+      await this.sendMessage(chatId, reply);
+      return reply;
+    }
+
+    // 2. Comandos com barra / ou !
     if (cleanText.startsWith('/') || cleanText.startsWith('!')) {
       const parts = cleanText.substring(1).trim().split(/\s+/);
       const cmd = parts[0].toLowerCase().split('@')[0];
       const args = parts.slice(1);
 
-      if (cmd === 'start') {
+      if (cmd === 'start' || cmd === 'ajuda' || cmd === 'menu') {
         const welcome =
-          '🛡️ *Olá Luís! Bem-vindo ao Guardião Nobe no Telegram!*\n\n' +
-          'Seu Telegram foi conectado com sucesso ao sistema.\n' +
-          'Você receberá notificações e perguntas aqui automaticamente.\n\n' +
-          '📌 *Comandos disponíveis:*\n' +
-          '/status - Exibe o status do card e horas\n' +
-          '/iniciar - Inicia novo card no Trello\n' +
-          '/almoco - Pausa para almoço (move para o mês)\n' +
-          '/pausar - Pausa o expediente\n' +
-          '/voltar - Retoma o expediente\n' +
-          '/encerrar - Encerra o dia e move o card\n' +
-          '/comentar <texto> - Comenta no card ativo';
+          '🛡️ *Guardião Nobe — Menu de Controle*\n\n' +
+          'Selecione ou envie um comando abaixo:\n\n' +
+          '📌 *Comandos Rápidos:*\n' +
+          '/status - Ver horas trabalhadas e card ativo\n' +
+          '/iniciar - Iniciar novo card no Trello\n' +
+          '/almoco - Pausa para almoço (move para a pasta do mês)\n' +
+          '/pausar - Pausa rápida do expediente\n' +
+          '/voltar - Retomar expediente\n' +
+          '/encerrar - Finalizar o dia\n' +
+          '/comentar <texto> - Adicionar comentário manual no card';
         await this.sendMessage(chatId, welcome);
         return welcome;
       }
@@ -135,27 +158,20 @@ export class TelegramAdapter {
       return;
     }
 
-    if (this.pendingQuestionResolve) {
-      const resolve = this.pendingQuestionResolve;
-      this.clearPendingQuestion();
-      resolve(cleanText);
-      const reply = `✅ *Entendido! Comentário registrado no Trello:*\n"${cleanText}"`;
-      await this.sendMessage(chatId, reply);
-      return reply;
-    }
+    // 3. Se for mensagem aleatória e NÃO estiver aguardando resposta da pergunta periódica
+    const menuReply =
+      '🤖 *Guardião Nobe — Menu Principal*\n\n' +
+      'Para registrar um comentário use:\n`/comentar seu texto aqui`\n\n' +
+      '📌 *Comandos disponíveis:*\n' +
+      '/status - Status ao vivo e contagem de horas\n' +
+      '/iniciar - Iniciar card do dia\n' +
+      '/almoco - Pausa para almoço\n' +
+      '/pausar - Pausa temporária\n' +
+      '/voltar - Retomar tarefas\n' +
+      '/encerrar - Encerrar expediente';
 
-    // Se o usuário enviar qualquer texto livre, trata como comentário no card ativo
-    if (this.commandHandler) {
-      const reply = await this.commandHandler('comentar', [cleanText]);
-      if (reply) {
-        await this.sendMessage(chatId, reply);
-        return reply;
-      }
-    }
-
-    const defaultReply = '🤖 Olá Luís! Sou o Guardião Nobe. Use /status ou envie uma mensagem para comentar no card ativo.';
-    await this.sendMessage(chatId, defaultReply);
-    return defaultReply;
+    await this.sendMessage(chatId, menuReply);
+    return menuReply;
   }
 
   public async sendMessage(chatId: string, text: string): Promise<void> {
@@ -173,7 +189,7 @@ export class TelegramAdapter {
         { timeout: 8000 }
       );
     } catch (err: any) {
-      console.error(`[Telegram] Erro ao enviar mensagem para ${chatId}:`, err.message);
+      console.error(`[TelegramAdapter] Erro ao enviar mensagem para ${chatId}:`, err.message);
     }
   }
 
@@ -184,6 +200,9 @@ export class TelegramAdapter {
     }
   }
 
+  /**
+   * Pergunta interativa com timeout de 2 minutos
+   */
   public async askActivityQuestion(
     timeoutMs = 120000,
     onTimeout?: () => void
@@ -195,6 +214,7 @@ export class TelegramAdapter {
     }
 
     this.clearPendingQuestion();
+    this.isAwaitingAnswer = true;
 
     const questionMessage =
       '⏰ *[Guardião Nobe]* Olá Luís!\n\n' +
@@ -203,17 +223,24 @@ export class TelegramAdapter {
 
     return new Promise<string | null>((resolve) => {
       this.pendingQuestionResolve = (answer) => {
+        this.clearPendingQuestion();
         resolve(answer);
       };
 
-      this.pendingQuestionTimer = setTimeout(() => {
-        this.clearPendingQuestion();
-        if (onTimeout) onTimeout();
-        resolve(null);
+      this.pendingQuestionTimer = setTimeout(async () => {
+        if (this.isAwaitingAnswer) {
+          this.clearPendingQuestion();
+          await this.sendMessage(
+            chatId,
+            '⏱️ *[Guardião Nobe]* Tempo esgotado (2 min). Ativando comentário automático de proteção...'
+          );
+          if (onTimeout) onTimeout();
+          resolve(null);
+        }
       }, timeoutMs);
 
       this.sendAlert(questionMessage).catch((err) =>
-        console.error('[Telegram] Falha ao enviar pergunta:', err)
+        console.error('[TelegramAdapter] Falha ao enviar pergunta:', err)
       );
     });
   }
@@ -223,6 +250,7 @@ export class TelegramAdapter {
       clearTimeout(this.pendingQuestionTimer);
       this.pendingQuestionTimer = null;
     }
+    this.isAwaitingAnswer = false;
     this.pendingQuestionResolve = null;
   }
 }

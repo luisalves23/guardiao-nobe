@@ -6,6 +6,15 @@ const DATA_DIR = path.resolve(process.cwd(), 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const AGENDA_FILE = path.join(DATA_DIR, 'agenda.json');
 const LOGS_FILE = path.join(DATA_DIR, 'logs.json');
+const SHIFT_STATE_FILE = path.join(DATA_DIR, 'shift_state.json');
+
+export interface PersistentShiftState {
+  cardId: string | null;
+  cardName: string | null;
+  cardDate: string | null; // e.g. "24/08/2026"
+  cardCreatedAt: number | null;
+  accumulatedMinutes: number;
+}
 
 const DEFAULT_CONFIG: AppConfig = {
   trello: {
@@ -27,6 +36,15 @@ const DEFAULT_CONFIG: AppConfig = {
   },
   hourlyRate: 18.0,
   notificationPhone: process.env.WHATSAPP_NOTIFICATION_PHONE || '',
+  rotationLimitMinutes: 230,
+  actionMessages: {
+    start: { text: 'Iniciando as atividades do dia.', enabled: true },
+    pause: { text: 'Pausa rápida.', enabled: false },
+    resume: { text: 'Retomando as tarefas.', enabled: true },
+    lunch: { text: 'Pausa para almoço.', enabled: true },
+    end: { text: 'Finalizando o expediente por hoje.', enabled: false },
+    rotate: { text: 'Atualizando card para continuidade das tarefas.', enabled: true },
+  },
   fallbackTemplates: [
     'Seguindo com o desenvolvimento e testes das rotinas.',
     'Ajustando implementação e revisando lógica dos módulos.',
@@ -46,6 +64,13 @@ export class StorageService {
   private config: AppConfig = DEFAULT_CONFIG;
   private agenda: AgendaItem[] = [];
   private logs: AuditLog[] = [];
+  private shiftState: PersistentShiftState = {
+    cardId: null,
+    cardName: null,
+    cardDate: null,
+    cardCreatedAt: null,
+    accumulatedMinutes: 0,
+  };
 
   private constructor() {
     this.ensureDataDir();
@@ -69,50 +94,39 @@ export class StorageService {
     try {
       if (fs.existsSync(CONFIG_FILE)) {
         const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
-        this.config = { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+        const parsed = JSON.parse(raw);
+        this.config = {
+          ...DEFAULT_CONFIG,
+          ...parsed,
+          trello: { ...DEFAULT_CONFIG.trello, ...(parsed.trello || {}) },
+          actionMessages: { ...DEFAULT_CONFIG.actionMessages, ...(parsed.actionMessages || {}) },
+        };
       } else {
         this.saveConfig(DEFAULT_CONFIG);
       }
-    } catch (e) {
-      console.error('[Storage] Erro ao carregar config.json:', e);
-      this.config = DEFAULT_CONFIG;
-    }
 
-    try {
       if (fs.existsSync(AGENDA_FILE)) {
         const raw = fs.readFileSync(AGENDA_FILE, 'utf-8');
         this.agenda = JSON.parse(raw);
-      } else {
-        this.agenda = [
-          { id: '1', timeSlot: '07:00 - 10:00', topic: 'Análise de tarefas e desenvolvimento inicial', completed: false },
-          { id: '2', timeSlot: '10:00 - 12:00', topic: 'Codificação de novas funcionalidades', completed: false },
-          { id: '3', timeSlot: '13:00 - 15:30', topic: 'Refatoração e testes de integração', completed: false },
-          { id: '4', timeSlot: '15:30 - 18:00', topic: 'Revisão de código e fechamento do dia', completed: false },
-        ];
-        this.saveAgenda(this.agenda);
       }
-    } catch (e) {
-      console.error('[Storage] Erro ao carregar agenda.json:', e);
-      this.agenda = [];
-    }
 
-    try {
       if (fs.existsSync(LOGS_FILE)) {
         const raw = fs.readFileSync(LOGS_FILE, 'utf-8');
         this.logs = JSON.parse(raw);
         this.pruneOldLogs();
-      } else {
-        this.logs = [];
-        this.saveLogs();
       }
-    } catch (e) {
-      console.error('[Storage] Erro ao carregar logs.json:', e);
-      this.logs = [];
+
+      if (fs.existsSync(SHIFT_STATE_FILE)) {
+        const raw = fs.readFileSync(SHIFT_STATE_FILE, 'utf-8');
+        this.shiftState = JSON.parse(raw);
+      }
+    } catch (err: any) {
+      console.error('[StorageService] Erro ao carregar dados:', err.message);
     }
   }
 
   public getConfig(): AppConfig {
-    return { ...this.config };
+    return this.config;
   }
 
   public saveConfig(newConfig: Partial<AppConfig>): AppConfig {
@@ -120,51 +134,63 @@ export class StorageService {
       ...this.config,
       ...newConfig,
       trello: { ...this.config.trello, ...(newConfig.trello || {}) },
-      schedule: { ...this.config.schedule, ...(newConfig.schedule || {}) },
+      actionMessages: { ...this.config.actionMessages, ...(newConfig.actionMessages || {}) },
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(this.config, null, 2), 'utf-8');
-    return this.getConfig();
+    return this.config;
   }
 
   public getAgenda(): AgendaItem[] {
-    return [...this.agenda];
+    return this.agenda;
   }
 
   public saveAgenda(newAgenda: AgendaItem[]): AgendaItem[] {
     this.agenda = newAgenda;
     fs.writeFileSync(AGENDA_FILE, JSON.stringify(this.agenda, null, 2), 'utf-8');
-    return this.getAgenda();
+    return this.agenda;
+  }
+
+  public getShiftState(): PersistentShiftState {
+    return this.shiftState;
+  }
+
+  public saveShiftState(state: Partial<PersistentShiftState>): PersistentShiftState {
+    this.shiftState = { ...this.shiftState, ...state };
+    fs.writeFileSync(SHIFT_STATE_FILE, JSON.stringify(this.shiftState, null, 2), 'utf-8');
+    return this.shiftState;
+  }
+
+  public addLog(entry: Omit<AuditLog, 'id' | 'timestamp'>): AuditLog {
+    const log: AuditLog = {
+      id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+      timestamp: new Date().toISOString(),
+      ...entry,
+    };
+
+    this.logs.unshift(log);
+    this.pruneOldLogs();
+    this.persistLogs();
+    return log;
   }
 
   public getLogs(limit = 100): AuditLog[] {
-    return this.logs.slice(-limit).reverse();
+    return this.logs.slice(0, limit);
   }
 
-  public addLog(log: Omit<AuditLog, 'id' | 'timestamp'>): AuditLog {
-    const entry: AuditLog = {
-      id: Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
-      timestamp: new Date().toISOString(),
-      ...log,
-    };
-    this.logs.push(entry);
-    this.pruneOldLogs();
-    this.saveLogs();
-    return entry;
+  public getAllLogs(): AuditLog[] {
+    return this.logs;
   }
 
-  /**
-   * Mantém estritamente registros de até 30 dias atrás
-   */
   private pruneOldLogs() {
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const initialCount = this.logs.length;
     this.logs = this.logs.filter((l) => new Date(l.timestamp).getTime() >= thirtyDaysAgo);
-    if (this.logs.length !== initialCount) {
-      console.log(`[Storage] Limpeza automática de logs: ${initialCount - this.logs.length} logs com mais de 30 dias foram descartados.`);
-    }
   }
 
-  private saveLogs() {
-    fs.writeFileSync(LOGS_FILE, JSON.stringify(this.logs, null, 2), 'utf-8');
+  private persistLogs() {
+    try {
+      fs.writeFileSync(LOGS_FILE, JSON.stringify(this.logs, null, 2), 'utf-8');
+    } catch (err: any) {
+      console.error('[StorageService] Falha ao salvar logs:', err.message);
+    }
   }
 }

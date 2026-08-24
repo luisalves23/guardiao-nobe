@@ -487,6 +487,10 @@ async function sendSimulatedMessage(e) {
   }
 }
 
+function exportLogs() {
+  window.open('/api/logs/export', '_blank');
+}
+
 // Configurações e Trello
 async function loadConfig() {
   try {
@@ -505,6 +509,26 @@ async function loadConfig() {
     document.getElementById('cfgPhone').value = configData.notificationPhone || '';
 
     document.getElementById('cfgTelegramToken').value = (configData.telegram && configData.telegram.botToken) || '';
+
+    // Carrega mensagens customizáveis por ação
+    const msgs = configData.actionMessages || {};
+    document.getElementById('cfgMsgStartEnabled').checked = msgs.start?.enabled !== false;
+    document.getElementById('cfgMsgStartText').value = msgs.start?.text || 'Iniciando as atividades do dia.';
+
+    document.getElementById('cfgMsgLunchEnabled').checked = msgs.lunch?.enabled !== false;
+    document.getElementById('cfgMsgLunchText').value = msgs.lunch?.text || 'Pausa para almoço.';
+
+    document.getElementById('cfgMsgResumeEnabled').checked = msgs.resume?.enabled !== false;
+    document.getElementById('cfgMsgResumeText').value = msgs.resume?.text || 'Retomando as tarefas.';
+
+    document.getElementById('cfgMsgPauseEnabled').checked = msgs.pause?.enabled === true;
+    document.getElementById('cfgMsgPauseText').value = msgs.pause?.text || 'Pausa rápida.';
+
+    document.getElementById('cfgMsgRotateEnabled').checked = msgs.rotate?.enabled !== false;
+    document.getElementById('cfgMsgRotateText').value = msgs.rotate?.text || 'Atualizando card para continuidade das tarefas.';
+
+    document.getElementById('cfgMsgEndEnabled').checked = msgs.end?.enabled === true;
+    document.getElementById('cfgMsgEndText').value = msgs.end?.text || 'Finalizando o expediente por hoje.';
 
     // Atualiza preview da coluna mensal
     const monthsPt = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -535,6 +559,32 @@ async function saveSettings(e) {
       botToken: document.getElementById('cfgTelegramToken').value.trim(),
       chatId: (configData.telegram && configData.telegram.chatId) || '',
       enabled: !!document.getElementById('cfgTelegramToken').value.trim(),
+    },
+    actionMessages: {
+      start: {
+        enabled: document.getElementById('cfgMsgStartEnabled').checked,
+        text: document.getElementById('cfgMsgStartText').value.trim(),
+      },
+      lunch: {
+        enabled: document.getElementById('cfgMsgLunchEnabled').checked,
+        text: document.getElementById('cfgMsgLunchText').value.trim(),
+      },
+      resume: {
+        enabled: document.getElementById('cfgMsgResumeEnabled').checked,
+        text: document.getElementById('cfgMsgResumeText').value.trim(),
+      },
+      pause: {
+        enabled: document.getElementById('cfgMsgPauseEnabled').checked,
+        text: document.getElementById('cfgMsgPauseText').value.trim(),
+      },
+      rotate: {
+        enabled: document.getElementById('cfgMsgRotateEnabled').checked,
+        text: document.getElementById('cfgMsgRotateText').value.trim(),
+      },
+      end: {
+        enabled: document.getElementById('cfgMsgEndEnabled').checked,
+        text: document.getElementById('cfgMsgEndText').value.trim(),
+      },
     },
   };
 

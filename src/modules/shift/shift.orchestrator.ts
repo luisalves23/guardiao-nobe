@@ -9,23 +9,51 @@ export class ShiftOrchestrator {
   private state: ShiftState = 'IDLE';
   private activeCardId: string | null = null;
   private activeCardName: string | null = null;
+  private cardDate: string | null = null;
   private cardStartTime: number | null = null;
+  private cardAccumulatedMinutes: number = 0;
   private lastCommentTime: number | null = null;
   private nextCommentTargetTime: number | null = null;
   private nextRotationTargetTime: number | null = null;
   private isProcessingComment = false;
   private isProcessingRotation = false;
   private todayWorkedMinutes = 0;
-  private lastTickTime: number = Date.now();
   private wsBroadcastCallback: ((status: LiveStatus) => void) | null = null;
 
-  private constructor() {}
+  private constructor() {
+    this.restorePersistentState();
+  }
 
   public static getInstance(): ShiftOrchestrator {
     if (!ShiftOrchestrator.instance) {
       ShiftOrchestrator.instance = new ShiftOrchestrator();
     }
     return ShiftOrchestrator.instance;
+  }
+
+  private restorePersistentState() {
+    const saved = StorageService.getInstance().getShiftState();
+    const today = formatTodayDate(new Date());
+
+    if (saved && saved.cardId && saved.cardDate === today) {
+      this.activeCardId = saved.cardId;
+      this.activeCardName = saved.cardName;
+      this.cardDate = saved.cardDate;
+      this.cardStartTime = saved.cardCreatedAt;
+      this.cardAccumulatedMinutes = saved.accumulatedMinutes || 0;
+      this.todayWorkedMinutes = saved.accumulatedMinutes || 0;
+      console.log(`[ShiftOrchestrator] Card vigente restaurado da persistência: "${this.activeCardName}" (${this.cardAccumulatedMinutes.toFixed(1)}m trabalhados hoje).`);
+    }
+  }
+
+  private saveCurrentState() {
+    StorageService.getInstance().saveShiftState({
+      cardId: this.activeCardId,
+      cardName: this.activeCardName,
+      cardDate: this.cardDate,
+      cardCreatedAt: this.cardStartTime,
+      accumulatedMinutes: this.cardAccumulatedMinutes,
+    });
   }
 
   public setBroadcastCallback(cb: (status: LiveStatus) => void) {
@@ -61,12 +89,15 @@ export class ShiftOrchestrator {
   public updateTime(elapsedMinutes: number) {
     if (this.state === 'WORKING' && this.activeCardId) {
       this.todayWorkedMinutes += elapsedMinutes;
+      this.cardAccumulatedMinutes += elapsedMinutes;
+      this.saveCurrentState();
     }
   }
 
   public getActiveCardId() { return this.activeCardId; }
   public getActiveCardName() { return this.activeCardName; }
   public getCardStartTime() { return this.cardStartTime; }
+  public getCardAccumulatedMinutes() { return this.cardAccumulatedMinutes; }
   public getState() { return this.state; }
   public getNextRotationTargetTime() { return this.nextRotationTargetTime; }
   public getNextCommentTargetTime() { return this.nextCommentTargetTime; }
@@ -75,32 +106,38 @@ export class ShiftOrchestrator {
   public setAdoptedCard(cardId: string, cardName: string) {
     this.activeCardId = cardId;
     this.activeCardName = cardName;
-    this.cardStartTime = Date.now();
+    this.cardDate = formatTodayDate(new Date());
+    if (!this.cardStartTime) this.cardStartTime = Date.now();
     this.lastCommentTime = Date.now();
     this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
     this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
     this.state = 'WORKING';
+    this.saveCurrentState();
     this.broadcastStatus();
   }
 
   public setRotatedCard(cardId: string, cardName: string) {
     this.activeCardId = cardId;
     this.activeCardName = cardName;
+    this.cardDate = formatTodayDate(new Date());
     this.cardStartTime = Date.now();
+    this.cardAccumulatedMinutes = 0;
     this.lastCommentTime = Date.now();
     this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
     this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
+    this.saveCurrentState();
     this.broadcastStatus();
   }
 
   public setRescued() {
     this.lastCommentTime = Date.now();
     this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+    this.saveCurrentState();
     this.broadcastStatus();
   }
 
   /**
-   * Inicia o expediente garantindo card único (sem duplicatas) e comentário natural
+   * INICIAR EXPEDIENTE: Garante rastreamento do card vigente sem duplicatas
    */
   public async startShift(): Promise<string> {
     const storage = StorageService.getInstance();
@@ -108,64 +145,80 @@ export class ShiftOrchestrator {
     const trelloLists = TrelloListsManager.getInstance();
     const dispatcher = MessageDispatcher.getInstance();
     const config = storage.getConfig();
+    const today = formatTodayDate(new Date());
 
     if (!config.trello.workingListId) {
       throw new Error('ID da lista "Trabalhando Agora" não configurado.');
     }
 
     try {
-      // 1. Verifica se já existem cards em "Trabalhando Agora"
-      const existing = await trelloCards.getCardsInList(config.trello.workingListId);
-      
-      let cardToUse: any = null;
+      const rotationLimit = config.rotationLimitMinutes || 230;
 
-      if (existing && existing.length > 0) {
-        cardToUse = existing[0];
-        console.log(`[ShiftOrchestrator] Card existente "${cardToUse.name}" já está em Trabalhando Agora. Reutilizando sem criar duplicata.`);
-
-        // Se houver cards duplicados extras, move os excedentes para a pasta do mês
-        if (existing.length > 1 && config.trello.boardId) {
-          const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
-          for (let i = 1; i < existing.length; i++) {
-            await trelloCards.moveCard(existing[i].id, monthlyList.id);
-          }
-        }
+      // 1. Verifica se já temos um card vigente para hoje com tempo disponível
+      if (this.activeCardId && this.cardDate === today && this.cardAccumulatedMinutes < rotationLimit) {
+        console.log(`[ShiftOrchestrator] Reutilizando card vigente "${this.activeCardName}" para o expediente.`);
+        await trelloCards.moveCard(this.activeCardId, config.trello.workingListId);
       } else {
-        // 2. Se não houver nenhum card, cria exatamente 1 card
-        const dateFormatted = formatTodayDate(new Date());
-        const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
+        // 2. Verifica se há algum card já em "Trabalhando Agora" no Trello
+        const existingInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
+        
+        if (existingInWorking && existingInWorking.length > 0) {
+          const first = existingInWorking[0];
+          this.activeCardId = first.id;
+          this.activeCardName = first.name;
+          this.cardDate = today;
+          this.cardStartTime = Date.now();
+          this.cardAccumulatedMinutes = 0;
 
-        cardToUse = await trelloCards.createCard(
-          config.trello.workingListId,
-          cardTitle,
-          config.trello.memberId
-        );
+          // Limpa duplicatas concorrentes para a pasta do mês
+          if (existingInWorking.length > 1 && config.trello.boardId) {
+            const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
+            for (let i = 1; i < existingInWorking.length; i++) {
+              await trelloCards.moveCard(existingInWorking[i].id, monthlyList.id);
+            }
+          }
+        } else {
+          // 3. Cria o primeiro card do dia
+          const cardTitle = `Trabalho do Dia - ${today} - ${config.trello.userName || 'Luís Alves'}`;
+          const newCard = await trelloCards.createCard(
+            config.trello.workingListId,
+            cardTitle,
+            config.trello.memberId
+          );
+
+          this.activeCardId = newCard.id;
+          this.activeCardName = cardTitle;
+          this.cardDate = today;
+          this.cardStartTime = Date.now();
+          this.cardAccumulatedMinutes = 0;
+        }
       }
 
-      this.activeCardId = cardToUse.id;
-      this.activeCardName = cardToUse.name;
-      this.cardStartTime = Date.now();
       this.lastCommentTime = Date.now();
       this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
       this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
       this.state = 'WORKING';
+      this.saveCurrentState();
 
-      // Comentário 100% natural e discreto
-      await trelloCards.addComment(cardToUse.id, 'Iniciando as atividades do dia.');
+      // Comentário configurável de início
+      const startCfg = config.actionMessages?.start;
+      if (startCfg?.enabled && startCfg.text && this.activeCardId) {
+        await trelloCards.addComment(this.activeCardId, startCfg.text);
+      }
 
       storage.addLog({
         type: 'SHIFT_STARTED',
-        message: `Expediente ativo no card "${cardToUse.name}".`,
+        message: `Expediente ativo no card "${this.activeCardName}".`,
         source: 'SYSTEM',
-        details: { cardId: cardToUse.id, cardTitle: cardToUse.name },
+        details: { cardId: this.activeCardId, cardTitle: this.activeCardName },
       });
 
       await dispatcher.broadcastAlert(
-        `🚀 *[Guardião Nobe]* Expediente ativo no Trello!\n\n📋 *Card:* ${cardToUse.name}\n⏳ *Próximo comentário:* em ~20-25min\n🔄 *Rotação prevista:* em ~3h50min`
+        `🚀 *[Guardião Nobe]* Expediente ativo no Trello!\n\n📋 *Card:* ${this.activeCardName}\n⏳ *Próximo comentário:* em ~20-25min\n🔄 *Rotação prevista:* em ~${config.rotationLimitMinutes || 230}min`
       );
 
       this.broadcastStatus();
-      return `Expediente iniciado com sucesso! Card: "${cardToUse.name}"`;
+      return `Expediente iniciado no card: "${this.activeCardName}"`;
     } catch (err: any) {
       storage.addLog({
         type: 'ERROR',
@@ -177,7 +230,7 @@ export class ShiftOrchestrator {
   }
 
   /**
-   * Pausa o expediente: move todos os cards de Trabalhando Agora para a pasta do mês
+   * PAUSAR EXPEDIENTE
    */
   public async pauseShift(): Promise<string> {
     if (this.state !== 'WORKING') {
@@ -195,15 +248,20 @@ export class ShiftOrchestrator {
       try {
         const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
         const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
-        
+
+        const pauseCfg = config.actionMessages?.pause;
         for (const card of cardsInWorking) {
-          await trelloCards.addComment(card.id, 'Pausa rápida.');
+          if (pauseCfg?.enabled && pauseCfg.text) {
+            await trelloCards.addComment(card.id, pauseCfg.text);
+          }
           await trelloCards.moveCard(card.id, monthlyList.id);
         }
       } catch (err: any) {
         console.error('[ShiftOrchestrator] Erro ao mover card no pause:', err.message);
       }
     }
+
+    this.saveCurrentState();
 
     storage.addLog({
       type: 'PAUSED',
@@ -220,7 +278,7 @@ export class ShiftOrchestrator {
   }
 
   /**
-   * Retoma o expediente trazendo o card de volta ou abrindo novo se expirou
+   * RETOMAR EXPEDIENTE: Reutiliza o card vigente até ele expirar
    */
   public async resumeShift(): Promise<string> {
     if (this.state !== 'PAUSED' && this.state !== 'LUNCH') {
@@ -233,23 +291,24 @@ export class ShiftOrchestrator {
     const dispatcher = MessageDispatcher.getInstance();
     const config = storage.getConfig();
 
-    const now = Date.now();
-    const rotationLimitMinutes = config.rotationLimitMinutes || 230;
-    const cardAgeMinutes = this.cardStartTime ? (now - this.cardStartTime) / (1000 * 60) : 999;
+    const today = formatTodayDate(new Date());
+    const rotationLimit = config.rotationLimitMinutes || 230;
 
-    if (!this.activeCardId || cardAgeMinutes >= rotationLimitMinutes) {
-      const dateFormatted = formatTodayDate(new Date());
-      const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
+    // Se o card vigente expirou ou virou a data
+    if (!this.activeCardId || this.cardDate !== today || this.cardAccumulatedMinutes >= rotationLimit) {
+      const cardTitle = `Trabalho do Dia - ${today} - ${config.trello.userName || 'Luís Alves'}`;
       const newCard = await trelloCards.createCard(config.trello.workingListId, cardTitle, config.trello.memberId);
 
       this.activeCardId = newCard.id;
       this.activeCardName = cardTitle;
+      this.cardDate = today;
       this.cardStartTime = Date.now();
-      this.lastCommentTime = Date.now();
-      this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
-      this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
+      this.cardAccumulatedMinutes = 0;
 
-      await trelloCards.addComment(newCard.id, 'Iniciando novo bloco de atividades.');
+      const resumeCfg = config.actionMessages?.resume;
+      if (resumeCfg?.enabled && resumeCfg.text) {
+        await trelloCards.addComment(newCard.id, resumeCfg.text);
+      }
 
       storage.addLog({
         type: 'RESUMED',
@@ -257,18 +316,25 @@ export class ShiftOrchestrator {
         source: 'SYSTEM',
       });
     } else {
+      // Reutiliza o card vigente existente
       await trelloCards.moveCard(this.activeCardId, config.trello.workingListId);
-      this.lastCommentTime = Date.now();
-      this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
 
-      await trelloCards.addComment(this.activeCardId, 'Retomando as tarefas.');
+      const resumeCfg = config.actionMessages?.resume;
+      if (resumeCfg?.enabled && resumeCfg.text) {
+        await trelloCards.addComment(this.activeCardId, resumeCfg.text);
+      }
 
       storage.addLog({
         type: 'RESUMED',
-        message: 'Expediente retomado. Card restaurado para Trabalhando Agora.',
+        message: `Expediente retomado. Card vigente "${this.activeCardName}" restaurado para Trabalhando Agora.`,
         source: 'SYSTEM',
       });
     }
+
+    this.lastCommentTime = Date.now();
+    this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+    this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
+    this.saveCurrentState();
 
     await dispatcher.broadcastAlert(
       '▶️ *[Guardião Nobe]* Expediente retomado com sucesso! Card ativo em Trabalhando Agora.'
@@ -279,7 +345,7 @@ export class ShiftOrchestrator {
   }
 
   /**
-   * Almoço: move todos os cards de Trabalhando Agora para a pasta do mês
+   * INICIAR ALMOÇO
    */
   public async startLunch(): Promise<string> {
     this.state = 'LUNCH';
@@ -293,15 +359,20 @@ export class ShiftOrchestrator {
       try {
         const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
         const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
-        
+
+        const lunchCfg = config.actionMessages?.lunch;
         for (const card of cardsInWorking) {
-          await trelloCards.addComment(card.id, 'Pausa para almoço.');
+          if (lunchCfg?.enabled && lunchCfg.text) {
+            await trelloCards.addComment(card.id, lunchCfg.text);
+          }
           await trelloCards.moveCard(card.id, monthlyList.id);
         }
       } catch (err: any) {
         console.error('[ShiftOrchestrator] Erro ao mover card no almoço:', err.message);
       }
     }
+
+    this.saveCurrentState();
 
     storage.addLog({
       type: 'LUNCH_STARTED',
@@ -318,7 +389,7 @@ export class ShiftOrchestrator {
   }
 
   /**
-   * Encerramento do dia: move todos os cards e encerra contagem
+   * ENCERRAR EXPEDIENTE
    */
   public async endShift(): Promise<string> {
     const trelloCards = TrelloCardsManager.getInstance();
@@ -332,8 +403,11 @@ export class ShiftOrchestrator {
         const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
         const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
 
+        const endCfg = config.actionMessages?.end;
         for (const card of cardsInWorking) {
-          await trelloCards.addComment(card.id, 'Finalizando o expediente por hoje.');
+          if (endCfg?.enabled && endCfg.text) {
+            await trelloCards.addComment(card.id, endCfg.text);
+          }
           await trelloCards.moveCard(card.id, monthlyList.id);
         }
       } catch (err: any) {
@@ -352,18 +426,16 @@ export class ShiftOrchestrator {
     );
 
     this.state = 'IDLE';
-    this.activeCardId = null;
-    this.activeCardName = null;
-    this.cardStartTime = null;
     this.nextCommentTargetTime = null;
     this.nextRotationTargetTime = null;
+    this.saveCurrentState();
 
     this.broadcastStatus();
     return 'Expediente encerrado com sucesso.';
   }
 
   /**
-   * Rotação do card de 4 horas
+   * ROTAÇÃO DE CARD
    */
   public async rotateCard(): Promise<void> {
     if (this.isProcessingRotation || !this.activeCardId) return;
@@ -374,19 +446,18 @@ export class ShiftOrchestrator {
     const trelloLists = TrelloListsManager.getInstance();
     const dispatcher = MessageDispatcher.getInstance();
     const config = storage.getConfig();
+    const today = formatTodayDate(new Date());
 
     try {
       const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
 
-      await trelloCards.addComment(
-        this.activeCardId,
-        'Atualizando card para continuidade das tarefas.'
-      );
+      const rotateCfg = config.actionMessages?.rotate;
+      if (rotateCfg?.enabled && rotateCfg.text) {
+        await trelloCards.addComment(this.activeCardId, rotateCfg.text);
+      }
       await trelloCards.moveCard(this.activeCardId, monthlyList.id);
 
-      const dateFormatted = formatTodayDate(new Date());
-      const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
-
+      const cardTitle = `Trabalho do Dia - ${today} - ${config.trello.userName || 'Luís Alves'}`;
       const newCard = await trelloCards.createCard(
         config.trello.workingListId,
         cardTitle,
@@ -395,25 +466,24 @@ export class ShiftOrchestrator {
 
       this.activeCardId = newCard.id;
       this.activeCardName = cardTitle;
+      this.cardDate = today;
       this.cardStartTime = Date.now();
+      this.cardAccumulatedMinutes = 0;
       this.lastCommentTime = Date.now();
       this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
       this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
 
-      await trelloCards.addComment(
-        newCard.id,
-        'Iniciando novo bloco de atividades.'
-      );
+      this.saveCurrentState();
 
       storage.addLog({
         type: 'CARD_ROTATED',
-        message: `Card rotacionado aos ~3h55. Card anterior movido para "${monthlyList.name}" e novo card aberto.`,
+        message: `Card rotacionado. Card anterior movido para "${monthlyList.name}" e novo card aberto.`,
         source: 'SYSTEM',
         details: { newCardId: newCard.id, cardTitle },
       });
 
       await dispatcher.broadcastAlert(
-        `🔄 *[Guardião Nobe]* ROTAÇÃO DE CARD REALIZADA!\n\nSeu card anterior atingiu ~3h55 e foi movido para a coluna "${monthlyList.name}".\nUm novo card (*${cardTitle}*) já está aberto em "Trabalhando Agora" com contagem contínua!`
+        `🔄 *[Guardião Nobe]* ROTAÇÃO DE CARD REALIZADA!\n\nSeu card anterior foi movido para "${monthlyList.name}".\nUm novo card (*${cardTitle}*) já está aberto em "Trabalhando Agora" com contagem contínua!`
       );
     } catch (err: any) {
       console.error('[ShiftOrchestrator] Falha na rotação do card:', err.message);
@@ -430,7 +500,58 @@ export class ShiftOrchestrator {
   }
 
   /**
-   * Envio de comentário periódico
+   * VIRADA DA MEIA-NOITE: Fecha o card de ontem e abre um com a data de hoje
+   */
+  public async handleMidnightDateShift(): Promise<void> {
+    const today = formatTodayDate(new Date());
+    if (this.cardDate && this.cardDate !== today && this.activeCardId) {
+      console.log(`[ShiftOrchestrator] 🌙 Virada de dia detectada (Ontem: ${this.cardDate} -> Hoje: ${today}). Rotacionando card para a nova data...`);
+      
+      const storage = StorageService.getInstance();
+      const trelloCards = TrelloCardsManager.getInstance();
+      const trelloLists = TrelloListsManager.getInstance();
+      const dispatcher = MessageDispatcher.getInstance();
+      const config = storage.getConfig();
+
+      try {
+        const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
+        await trelloCards.moveCard(this.activeCardId, monthlyList.id);
+
+        let newCardName: string | null = null;
+        let newCardId: string | null = null;
+
+        if (this.state === 'WORKING') {
+          const cardTitle = `Trabalho do Dia - ${today} - ${config.trello.userName || 'Luís Alves'}`;
+          const newCard = await trelloCards.createCard(config.trello.workingListId, cardTitle, config.trello.memberId);
+          newCardId = newCard.id;
+          newCardName = cardTitle;
+        }
+
+        this.activeCardId = newCardId;
+        this.activeCardName = newCardName;
+        this.cardDate = today;
+        this.cardStartTime = Date.now();
+        this.cardAccumulatedMinutes = 0;
+        this.todayWorkedMinutes = 0; // Novo dia, novo contador diário
+        this.saveCurrentState();
+
+        storage.addLog({
+          type: 'MIDNIGHT_ROTATION',
+          message: `Virada da meia-noite processada. Card anterior movido para "${monthlyList.name}" e novo dia ${today} iniciado.`,
+          source: 'SYSTEM',
+        });
+
+        await dispatcher.broadcastAlert(
+          `🌙 *[Guardião Nobe]* Virada de dia (${today}) detectada! Card anterior arquivado e contadores zerados para o novo dia.`
+        );
+      } catch (err: any) {
+        console.error('[ShiftOrchestrator] Erro na virada da meia-noite:', err.message);
+      }
+    }
+  }
+
+  /**
+   * ENVIO DE COMENTÁRIO PERIÓDICO
    */
   public async sendPeriodicComment(): Promise<void> {
     if (this.isProcessingComment || !this.activeCardId) return;
@@ -443,7 +564,7 @@ export class ShiftOrchestrator {
 
     try {
       let commentText: string | null = null;
-      let source: CommentSource = 'WHATSAPP';
+      let source: CommentSource = 'TELEGRAM';
 
       const userReply = await dispatcher.askActivityQuestion(120000, () => {
         console.log('[ShiftOrchestrator] Timeout de 2 min atingido. Ativando fallback...');
@@ -451,7 +572,7 @@ export class ShiftOrchestrator {
 
       if (userReply && userReply.trim()) {
         commentText = userReply.trim();
-        source = 'WHATSAPP';
+        source = 'TELEGRAM';
       } else {
         const resolved = agenda.resolveFallbackComment();
         commentText = resolved.text;
@@ -464,6 +585,7 @@ export class ShiftOrchestrator {
       await trelloCards.addComment(this.activeCardId, commentText);
       this.lastCommentTime = Date.now();
       this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+      this.saveCurrentState();
 
       storage.addLog({
         type: 'COMMENT_SENT',
