@@ -1,7 +1,7 @@
 import { StorageService } from '../../services/storage.service.js';
 import { TrelloCardsManager, TrelloListsManager } from '../trello/index.js';
 import { MessageDispatcher, TelegramAdapter } from '../messaging/index.js';
-import { AgendaManager, formatTodayDate, getCommentJitterMs, getRotationJitterMs } from '../scheduler/index.js';
+import { AgendaManager, formatTodayDate, formatHMS, getCommentJitterMs, getRotationJitterMs } from '../scheduler/index.js';
 import { ShiftState, LiveStatus, CommentSource } from '../../types/index.js';
 
 export class ShiftOrchestrator {
@@ -18,6 +18,7 @@ export class ShiftOrchestrator {
   private isProcessingComment = false;
   private isProcessingRotation = false;
   private todayWorkedMinutes = 0;
+  private todayWorkedSeconds = 0;
   private wsBroadcastCallback: ((status: LiveStatus) => void) | null = null;
 
   private constructor() {
@@ -42,6 +43,7 @@ export class ShiftOrchestrator {
       this.cardStartTime = saved.cardCreatedAt;
       this.cardAccumulatedMinutes = saved.accumulatedMinutes || 0;
       this.todayWorkedMinutes = saved.accumulatedMinutes || 0;
+      this.todayWorkedSeconds = (saved.accumulatedMinutes || 0) * 60;
       console.log(`[ShiftOrchestrator] Card vigente restaurado da persistência: "${this.activeCardName}" (${this.cardAccumulatedMinutes.toFixed(1)}m trabalhados hoje).`);
     }
   }
@@ -75,7 +77,9 @@ export class ShiftOrchestrator {
       isWhatsAppConnected: telegram.isConfigured() || !!config.notificationPhone,
       isTrelloConnected: !!config.trello.apiKey && !!config.trello.token,
       todayMinutesWorked: Math.round(this.todayWorkedMinutes * 10) / 10,
-      todayEarnings: Math.round((this.todayWorkedMinutes / 60) * config.hourlyRate * 100) / 100,
+      todaySecondsWorked: Math.floor(this.todayWorkedSeconds),
+      todayFormattedTime: formatHMS(this.todayWorkedSeconds),
+      todayEarnings: Math.round((this.todayWorkedSeconds / 3600) * config.hourlyRate * 100) / 100,
       lastSyncTime: new Date().toISOString(),
     };
   }
@@ -88,7 +92,9 @@ export class ShiftOrchestrator {
 
   public updateTime(elapsedMinutes: number) {
     if (this.state === 'WORKING' && this.activeCardId) {
-      this.todayWorkedMinutes += elapsedMinutes;
+      const elapsedSeconds = elapsedMinutes * 60;
+      this.todayWorkedSeconds += elapsedSeconds;
+      this.todayWorkedMinutes = this.todayWorkedSeconds / 60;
       this.cardAccumulatedMinutes += elapsedMinutes;
       this.saveCurrentState();
     }
@@ -417,12 +423,12 @@ export class ShiftOrchestrator {
 
     storage.addLog({
       type: 'SHIFT_ENDED',
-      message: `Expediente encerrado. Total de hoje: ${Math.floor(this.todayWorkedMinutes / 60)}h ${Math.round(this.todayWorkedMinutes % 60)}m.`,
+      message: `Expediente encerrado. Total de hoje: ${formatHMS(this.todayWorkedSeconds)}.`,
       source: 'SYSTEM',
     });
 
     await dispatcher.broadcastAlert(
-      `🏁 - [EXPEDIENTE ENCERRADO] - Dia finalizado! Total trabalhado: ${(this.todayWorkedMinutes / 60).toFixed(1)}h | Ganhos de hoje: R$ ${((this.todayWorkedMinutes / 60) * config.hourlyRate).toFixed(2)}`
+      `🏁 - [EXPEDIENTE ENCERRADO] - Dia finalizado! Total trabalhado: ${formatHMS(this.todayWorkedSeconds)} | Ganhos de hoje: R$ ${((this.todayWorkedSeconds / 3600) * config.hourlyRate).toFixed(2)}`
     );
 
     this.state = 'IDLE';

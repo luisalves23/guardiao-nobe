@@ -82,6 +82,8 @@ export interface LiveStatus {
   isWhatsAppConnected: boolean;
   isTrelloConnected: boolean;
   todayMinutesWorked: number;
+  todaySecondsWorked: number;
+  todayFormattedTime: string;
   todayEarnings: number;
   lastSyncTime: string;
 }

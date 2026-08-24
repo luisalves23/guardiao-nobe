@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import test from 'node:test';
 import http from 'node:http';
 import { getCommentJitterMs, getRotationJitterMs, formatDuration, formatTodayDate } from '../core/jitter.js';
+import { formatHMS } from '../modules/scheduler/index.js';
 import { StorageService } from '../services/storage.service.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { Engine } from '../core/engine.js';
@@ -31,11 +32,17 @@ test('3. Data: Formatação no padrão estrito DD/MM/AAAA', () => {
   assert.strictEqual(formatTodayDate(dJan), '05/01/2026');
 });
 
-test('4. Duração: FormatDuration formata milissegundos corretamente', () => {
+test('4. Duração: FormatDuration e formatHMS formatam 00h00min00seg corretamente', () => {
   assert.strictEqual(formatDuration(0), '00:00');
   assert.strictEqual(formatDuration(45 * 1000), '00:45');
   assert.strictEqual(formatDuration(65 * 1000), '01:05');
   assert.strictEqual(formatDuration(3665 * 1000), '01:01:05');
+
+  assert.strictEqual(formatHMS(0), '00h00min00seg');
+  assert.strictEqual(formatHMS(45), '00h00min45seg');
+  assert.strictEqual(formatHMS(65), '00h01min05seg');
+  assert.strictEqual(formatHMS(3665), '01h01min05seg');
+  assert.strictEqual(formatHMS(16335), '04h32min15seg');
 });
 
 test('5. Storage: Adição de logs, consulta e descarte automático de 30 dias', () => {
@@ -77,7 +84,7 @@ test('7. WhatsApp: Processamento de comandos e perguntas interativas com timeout
 
   // Teste de status
   const statusReply = await whatsapp.handleIncomingMessage('5511999999999', '!status');
-  assert.ok(typeof statusReply === 'string' && statusReply.includes('Status Guardião Nobe'));
+  assert.ok(typeof statusReply === 'string' && (statusReply.includes('STATUS') || statusReply.includes('Status')));
 
   // Teste de pergunta interativa
   const questionPromise = whatsapp.askActivityQuestion(5000);

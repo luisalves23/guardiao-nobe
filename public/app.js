@@ -121,9 +121,19 @@ function renderLiveStatus() {
   }
 
   // Horas & Ganhos
-  const hours = (liveStatus.todayMinutesWorked / 60).toFixed(1);
-  topHours.innerText = `${hours}h`;
-  topEarnings.innerText = `R$ ${liveStatus.todayEarnings.toFixed(2).replace('.', ',')}`;
+  const topHours = document.getElementById('topHours');
+  const topEarnings = document.getElementById('topEarnings');
+  if (topHours) {
+    if (liveStatus.todayFormattedTime) {
+      topHours.innerText = liveStatus.todayFormattedTime;
+    } else {
+      const totalSecs = (liveStatus.todayMinutesWorked || 0) * 60;
+      topHours.innerText = formatHMSClient(totalSecs);
+    }
+  }
+  if (topEarnings) {
+    topEarnings.innerText = `R$ ${liveStatus.todayEarnings.toFixed(2).replace('.', ',')}`;
+  }
 
   // WhatsApp Dot
   const waDot = document.getElementById('waDot');
@@ -136,6 +146,15 @@ function renderLiveStatus() {
   updateTimersDisplay();
 }
 
+function formatHMSClient(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(s / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  const seconds = s % 60;
+  const pad = (n) => n.toString().padStart(2, '0');
+  return `${pad(hours)}h${pad(minutes)}min${pad(seconds)}seg`;
+}
+
 // Atualização dos Contadores Regressivos
 function updateTimersDisplay() {
   if (!liveStatus || liveStatus.state !== 'WORKING') {
@@ -144,6 +163,13 @@ function updateTimersDisplay() {
     document.getElementById('countdownRotation').innerText = '--:--';
     document.getElementById('progressRotation').style.width = '0%';
     return;
+  }
+
+  // Incremento suave em tempo real de segundos trabalhados hoje
+  liveStatus.todaySecondsWorked = (liveStatus.todaySecondsWorked || 0) + 1;
+  const topHours = document.getElementById('topHours');
+  if (topHours) {
+    topHours.innerText = formatHMSClient(liveStatus.todaySecondsWorked);
   }
 
   const now = Date.now();

@@ -131,7 +131,7 @@ export class Engine {
     switch (cmd) {
       case 'status': {
         const s = orchestrator.getStatus();
-        return `📊 *Status Guardião Nobe 24/7*\n\n🔹 *Estado:* ${s.state}\n📋 *Card:* ${s.activeCardName || 'Nenhum'}\n⏱️ *Horas Hoje:* ${(s.todayMinutesWorked / 60).toFixed(1)}h\n💰 *Ganhos Hoje:* R$ ${s.todayEarnings.toFixed(2)}`;
+        return `📊 - [STATUS DO EXPEDIENTE] -\n\n🔹 *Estado:* ${s.state}\n📋 *Card:* ${s.activeCardName || 'Nenhum'}\n⏱️ *Tempo Hoje:* ${s.todayFormattedTime}\n💰 *Ganhos Hoje:* R$ ${s.todayEarnings.toFixed(2)}`;
       }
       case 'iniciar':
         return await orchestrator.startShift();
