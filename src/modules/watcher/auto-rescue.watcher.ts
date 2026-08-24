@@ -79,7 +79,7 @@ export class AutoRescueWatcher {
           });
 
           await dispatcher.broadcastAlert(
-            `🚨 *[AUTO-RESGATE EXECUTADO EM 3s]*\n\nO robô "A Presidência" moveu seu card para *"EM ESPERA"*!\nO Guardião Nobe detectou instantaneamente, restaurou para *"Trabalhando Agora"* e postou:\n💬 _"${rescueComment}"_\n\nSuas horas continuam seguras sem desconto!`
+            `🚨 - [AUTO-RESGATE ATIVADO] - O robô "A Presidência" moveu seu card para "EM ESPERA". Restaurado para "Trabalhando Agora" em 3s e comentário postado: "${rescueComment}".`
           );
         }
         // Caso B: Card movido para outra pasta (ex: Pasta do Mês) durante o expediente
@@ -114,7 +114,7 @@ export class AutoRescueWatcher {
             });
 
             await dispatcher.broadcastAlert(
-              `🔄 *[Guardião Nobe]* Card anterior atingiu o limite de tempo e foi arquivado.\nUm novo card (*${cardTitle}*) já foi aberto em "Trabalhando Agora" para manter suas horas ativas!`
+              `🔄 - [ROTAÇÃO DE CARD] - Card anterior arquivado. Novo card (*${cardTitle}*) aberto em "Trabalhando Agora" para manter suas horas ativas!`
             );
           } else {
             console.log('[AutoRescueWatcher] Card com tempo restante. Restaurando para Trabalhando Agora...');
@@ -132,7 +132,7 @@ export class AutoRescueWatcher {
             });
 
             await dispatcher.broadcastAlert(
-              '⚠️ *[Guardião Nobe]* Card detectado fora da coluna de trabalho durante o expediente. Restaurado para *"Trabalhando Agora"* com tempo restante ativo!'
+              `⚠️ - [CARD RESTAURADO] - Card detectado fora da coluna de trabalho durante o expediente. Restaurado para "Trabalhando Agora" com tempo restante ativo!`
             );
           }
         }

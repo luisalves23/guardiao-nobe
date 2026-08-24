@@ -121,7 +121,7 @@ export class TelegramAdapter {
       this.clearPendingQuestion();
       resolve(cleanText);
 
-      const reply = `✅ *Entendido! Comentário registrado no Trello:*\n"${cleanText}"`;
+      const reply = `✅ - [COMENTÁRIO REGISTRADO] - Postado no Trello com sucesso:\n"${cleanText}"`;
       await this.sendMessage(chatId, reply);
       return reply;
     }
@@ -134,8 +134,7 @@ export class TelegramAdapter {
 
       if (cmd === 'start' || cmd === 'ajuda' || cmd === 'menu') {
         const welcome =
-          '🛡️ *Guardião Nobe — Menu de Controle*\n\n' +
-          'Selecione ou envie um comando abaixo:\n\n' +
+          '🛡️ - [MENU DE CONTROLE] - Selecione ou envie um comando:\n\n' +
           '📌 *Comandos Rápidos:*\n' +
           '/status - Ver horas trabalhadas e card ativo\n' +
           '/iniciar - Iniciar novo card no Trello\n' +
@@ -160,10 +159,10 @@ export class TelegramAdapter {
 
     // 3. Se for mensagem aleatória e NÃO estiver aguardando resposta da pergunta periódica
     const menuReply =
-      '🤖 *Guardião Nobe — Menu Principal*\n\n' +
-      'Para registrar um comentário use:\n`/comentar seu texto aqui`\n\n' +
-      '📌 *Comandos disponíveis:*\n' +
-      '/status - Status ao vivo e contagem de horas\n' +
+      '🤖 - [MENU PRINCIPAL] - Comandos disponíveis:\n\n' +
+      'Para registrar comentário manual:\n`/comentar seu texto aqui`\n\n' +
+      '📌 *Comandos:*\n' +
+      '/status - Status ao vivo e horas\n' +
       '/iniciar - Iniciar card do dia\n' +
       '/almoco - Pausa para almoço\n' +
       '/pausar - Pausa temporária\n' +
@@ -217,9 +216,8 @@ export class TelegramAdapter {
     this.isAwaitingAnswer = true;
 
     const questionMessage =
-      '⏰ *[Guardião Nobe]* Olá Luís!\n\n' +
-      'O que você está executando agora no seu expediente?\n' +
-      '_(Responda a esta mensagem em até 2 minutos para registrar no Trello)_';
+      '⏰ - [CHECAGEM DE ATIVIDADE] - Olá Luís! O que você está executando agora no seu expediente?\n\n' +
+      '_(Responda em até 2 minutos para registrar no Trello)_';
 
     return new Promise<string | null>((resolve) => {
       this.pendingQuestionResolve = (answer) => {
@@ -232,7 +230,7 @@ export class TelegramAdapter {
           this.clearPendingQuestion();
           await this.sendMessage(
             chatId,
-            '⏱️ *[Guardião Nobe]* Tempo esgotado (2 min). Ativando comentário automático de proteção...'
+            '⏱️ - [TEMPO ESGOTADO] - Limite de 2 min expirado. Ativando comentário automático de proteção...'
           );
           if (onTimeout) onTimeout();
           resolve(null);

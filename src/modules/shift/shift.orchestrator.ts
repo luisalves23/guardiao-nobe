@@ -214,7 +214,7 @@ export class ShiftOrchestrator {
       });
 
       await dispatcher.broadcastAlert(
-        `🚀 *[Guardião Nobe]* Expediente ativo no Trello!\n\n📋 *Card:* ${this.activeCardName}\n⏳ *Próximo comentário:* em ~20-25min\n🔄 *Rotação prevista:* em ~${config.rotationLimitMinutes || 230}min`
+        `🚀 - [EXPEDIENTE INICIADO] - Card: "${this.activeCardName}" ativo em "Trabalhando Agora". Rotação prevista em ~${config.rotationLimitMinutes || 230}min.`
       );
 
       this.broadcastStatus();
@@ -270,7 +270,7 @@ export class ShiftOrchestrator {
     });
 
     await dispatcher.broadcastAlert(
-      '⏸️ *[Guardião Nobe]* Expediente pausado. Card movido para a pasta do mês para pausar a contagem.'
+      '⏸️ - [EXPEDIENTE PAUSADO] - Card movido para a pasta do mês para pausar a contagem da Nobe.'
     );
 
     this.broadcastStatus();
@@ -337,7 +337,7 @@ export class ShiftOrchestrator {
     this.saveCurrentState();
 
     await dispatcher.broadcastAlert(
-      '▶️ *[Guardião Nobe]* Expediente retomado com sucesso! Card ativo em Trabalhando Agora.'
+      `▶️ - [EXPEDIENTE RETOMADO] - Card "${this.activeCardName}" ativo em "Trabalhando Agora". Contagem de horas reativada.`
     );
 
     this.broadcastStatus();
@@ -381,7 +381,7 @@ export class ShiftOrchestrator {
     });
 
     await dispatcher.broadcastAlert(
-      '🍽️ *[Guardião Nobe]* Pausa para almoço iniciada! Card movido para a pasta do mês para não contar horas durante a refeição.'
+      '🍽️ - [PAUSA PARA ALMOÇO] - Card movido para a pasta do mês. Contagem congelada durante o almoço.'
     );
 
     this.broadcastStatus();
@@ -422,7 +422,7 @@ export class ShiftOrchestrator {
     });
 
     await dispatcher.broadcastAlert(
-      `🏁 *[Guardião Nobe]* Expediente encerrado!\n\n⏱️ *Total de horas trabalhadas:* ${(this.todayWorkedMinutes / 60).toFixed(1)}h\n💰 *Ganhos de hoje:* R$ ${((this.todayWorkedMinutes / 60) * config.hourlyRate).toFixed(2)}`
+      `🏁 - [EXPEDIENTE ENCERRADO] - Dia finalizado! Total trabalhado: ${(this.todayWorkedMinutes / 60).toFixed(1)}h | Ganhos de hoje: R$ ${((this.todayWorkedMinutes / 60) * config.hourlyRate).toFixed(2)}`
     );
 
     this.state = 'IDLE';
@@ -483,7 +483,7 @@ export class ShiftOrchestrator {
       });
 
       await dispatcher.broadcastAlert(
-        `🔄 *[Guardião Nobe]* ROTAÇÃO DE CARD REALIZADA!\n\nSeu card anterior foi movido para "${monthlyList.name}".\nUm novo card (*${cardTitle}*) já está aberto em "Trabalhando Agora" com contagem contínua!`
+        `🔄 - [ROTAÇÃO DE CARD] - Card anterior arquivado em "${monthlyList.name}". Novo card (*${cardTitle}*) aberto em "Trabalhando Agora".`
       );
     } catch (err: any) {
       console.error('[ShiftOrchestrator] Falha na rotação do card:', err.message);
@@ -492,7 +492,7 @@ export class ShiftOrchestrator {
         message: `Erro na rotação do card: ${err.message}`,
         source: 'SYSTEM',
       });
-      await dispatcher.broadcastAlert(`🚨 *[Guardião Nobe]* Falha ao rotacionar card no Trello: ${err.message}`);
+      await dispatcher.broadcastAlert(`🚨 - [ERRO NA ROTAÇÃO] - Falha ao rotacionar card no Trello: ${err.message}`);
     } finally {
       this.isProcessingRotation = false;
       this.broadcastStatus();
@@ -542,7 +542,7 @@ export class ShiftOrchestrator {
         });
 
         await dispatcher.broadcastAlert(
-          `🌙 *[Guardião Nobe]* Virada de dia (${today}) detectada! Card anterior arquivado e contadores zerados para o novo dia.`
+          `🌙 - [VIRADA DE DIA] - Data virada para ${today}! Card anterior arquivado e novo dia iniciado.`
         );
       } catch (err: any) {
         console.error('[ShiftOrchestrator] Erro na virada da meia-noite:', err.message);
@@ -578,7 +578,7 @@ export class ShiftOrchestrator {
         commentText = resolved.text;
         source = resolved.source;
 
-        const fallbackMsg = `⏱️ *[Guardião Nobe]* Limite de 2 min expirado.\nPara manter suas horas ativas na Nobe, comentei no Trello:\n\n💬 _"${commentText}"_`;
+        const fallbackMsg = `⏱️ - [TEMPO ESGOTADO] - Limite de 2 min expirado. Para manter suas horas ativas na Nobe, comentei: "${commentText}"`;
         await dispatcher.broadcastAlert(fallbackMsg);
       }
 
