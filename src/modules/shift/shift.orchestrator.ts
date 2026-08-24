@@ -177,8 +177,25 @@ export class ShiftOrchestrator {
 
       // 1. Verifica se já temos um card vigente para hoje com tempo disponível
       if (this.activeCardId && this.cardDate === today && this.cardAccumulatedMinutes < rotationLimit) {
-        console.log(`[ShiftOrchestrator] Reutilizando card vigente "${this.activeCardName}" para o expediente.`);
-        await trelloCards.moveCard(this.activeCardId, config.trello.workingListId);
+        try {
+          const card = await trelloCards.getCard(this.activeCardId);
+          if (card.closed) {
+            console.log(`[ShiftOrchestrator] Card vigente "${this.activeCardName}" estava arquivado. Desarquivando em Trabalhando Agora...`);
+            await trelloCards.unarchiveCard(this.activeCardId, config.trello.workingListId);
+          } else {
+            console.log(`[ShiftOrchestrator] Reutilizando card vigente "${this.activeCardName}" para o expediente.`);
+            await trelloCards.moveCard(this.activeCardId, config.trello.workingListId);
+          }
+        } catch (cardErr: any) {
+          console.warn(`[ShiftOrchestrator] Falha ao reutilizar card (${cardErr.message}). Criando novo card...`);
+          const cardTitle = `Trabalho do Dia - ${today} - ${config.trello.userName || 'Luís Alves'}`;
+          const newCard = await trelloCards.createCard(config.trello.workingListId, cardTitle, config.trello.memberId);
+          this.activeCardId = newCard.id;
+          this.activeCardName = cardTitle;
+          this.cardDate = today;
+          this.cardStartTime = Date.now();
+          this.cardAccumulatedMinutes = 0;
+        }
       } else {
         // 2. Verifica se há algum card já em "Trabalhando Agora" no Trello
         const existingInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
@@ -336,10 +353,26 @@ export class ShiftOrchestrator {
       });
     } else {
       // Reutiliza o card vigente existente
-      await trelloCards.moveCard(this.activeCardId, config.trello.workingListId);
+      try {
+        const card = await trelloCards.getCard(this.activeCardId);
+        if (card.closed) {
+          await trelloCards.unarchiveCard(this.activeCardId, config.trello.workingListId);
+        } else {
+          await trelloCards.moveCard(this.activeCardId, config.trello.workingListId);
+        }
+      } catch (err: any) {
+        console.warn(`[ShiftOrchestrator] Falha ao mover card no resume (${err.message}). Criando novo card...`);
+        const cardTitle = `Trabalho do Dia - ${today} - ${config.trello.userName || 'Luís Alves'}`;
+        const newCard = await trelloCards.createCard(config.trello.workingListId, cardTitle, config.trello.memberId);
+        this.activeCardId = newCard.id;
+        this.activeCardName = cardTitle;
+        this.cardDate = today;
+        this.cardStartTime = Date.now();
+        this.cardAccumulatedMinutes = 0;
+      }
 
       const resumeCfg = config.actionMessages?.resume;
-      if (resumeCfg?.enabled && resumeCfg.text) {
+      if (resumeCfg?.enabled && resumeCfg.text && this.activeCardId) {
         await trelloCards.addComment(this.activeCardId, resumeCfg.text);
       }
 

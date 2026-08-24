@@ -169,6 +169,16 @@ test('9. API Server: Cobertura completa de rotas HTTP e JSON', async () => {
   };
 
   try {
+    // Healthcheck
+    const health = await get('/health');
+    assert.strictEqual(health.status, 200);
+    assert.strictEqual(health.body.status, 'ok');
+
+    const healthz = await get('/healthz');
+    assert.strictEqual(healthz.status, 200);
+    assert.strictEqual(healthz.body.status, 'ok');
+
+    // Status & Config
     const status = await get('/api/status');
     assert.strictEqual(status.status, 200);
 
@@ -185,8 +195,24 @@ test('9. API Server: Cobertura completa de rotas HTTP e JSON', async () => {
     const logs = await get('/api/logs');
     assert.strictEqual(logs.status, 200);
 
+    const exportLogs = await get('/api/logs/export');
+    assert.strictEqual(exportLogs.status, 200);
+
     const waStatus = await get('/api/whatsapp/status');
     assert.strictEqual(waStatus.status, 200);
+
+    // Controles de Expediente via API HTTP
+    const ctrlPause = await post('/api/control/pause', {});
+    assert.strictEqual(ctrlPause.status, 200);
+
+    const ctrlResume = await post('/api/control/resume', {});
+    assert.strictEqual(ctrlResume.status, 200);
+
+    const ctrlLunch = await post('/api/control/lunch', {});
+    assert.strictEqual(ctrlLunch.status, 200);
+
+    const ctrlEnd = await post('/api/control/end', {});
+    assert.strictEqual(ctrlEnd.status, 200);
 
     const simSend = await post('/api/whatsapp/send', { from: 'Tester', text: '!ajuda' });
     assert.strictEqual(simSend.status, 200);

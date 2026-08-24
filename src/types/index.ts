@@ -68,6 +68,11 @@ export interface AppConfig {
   hourlyRate: number;
   notificationPhone: string;
   rotationLimitMinutes?: number; // Padrão: 230 (~3h50m)
+  telegram?: {
+    botToken?: string;
+    chatId?: string;
+    enabled?: boolean;
+  };
   actionMessages: {
     start: ActionMessageConfig;
     pause: ActionMessageConfig;

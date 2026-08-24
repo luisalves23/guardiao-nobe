@@ -37,6 +37,11 @@ const DEFAULT_CONFIG: AppConfig = {
   hourlyRate: 18.0,
   notificationPhone: process.env.WHATSAPP_NOTIFICATION_PHONE || '',
   rotationLimitMinutes: 230,
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
+    chatId: process.env.TELEGRAM_CHAT_ID || '',
+    enabled: true,
+  },
   actionMessages: {
     start: { text: 'Iniciando as atividades do dia.', enabled: true },
     pause: { text: 'Pausa rápida.', enabled: false },
