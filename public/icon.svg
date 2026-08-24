@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#022c22" />
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#059669" stop-opacity="0.2" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Rounded App Square -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect width="504" height="504" x="4" y="4" rx="108" fill="none" stroke="#10b981" stroke-opacity="0.3" stroke-width="6" />
+
+  <!-- Glowing Aura -->
+  <circle cx="256" cy="256" r="160" fill="url(#glowGrad)" filter="url(#glow)" opacity="0.4" />
+
+  <!-- Shield Base -->
+  <path d="M256 72 L384 128 C384 270 256 392 256 424 C256 392 128 270 128 128 Z" 
+        fill="url(#shieldGrad)" 
+        stroke="#34d399" 
+        stroke-width="12" 
+        stroke-linejoin="round" />
+
+  <!-- Inner Clock / Chronometer Circle -->
+  <circle cx="256" cy="230" r="74" fill="#0f172a" stroke="#ffffff" stroke-opacity="0.9" stroke-width="10" />
+  
+  <!-- Clock Hour / Minute Hands -->
+  <line x1="256" y1="230" x2="256" y2="182" stroke="#34d399" stroke-width="8" stroke-linecap="round" />
+  <line x1="256" y1="230" x2="294" y2="230" stroke="#34d399" stroke-width="8" stroke-linecap="round" />
+  <circle cx="256" cy="230" r="8" fill="#34d399" />
+
+  <!-- Protection Stars / Sparks -->
+  <circle cx="256" cy="116" r="6" fill="#ffffff" />
+  <path d="M220 320 L246 346 L298 290" fill="none" stroke="#34d399" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

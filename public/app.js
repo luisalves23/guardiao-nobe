@@ -47,25 +47,34 @@ function connectWebSocket() {
   }
 }
 
-// Alternador de Abas
+// Alternador de Abas (Desktop & Mobile)
 function switchTab(tabId) {
   currentTab = tabId;
   document.querySelectorAll('.tab-content').forEach((el) => el.classList.add('hidden'));
-  document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+  const targetTab = document.getElementById(`tab-${tabId}`);
+  if (targetTab) targetTab.classList.remove('hidden');
 
+  // Atualiza botões Desktop
   document.querySelectorAll('[id^="tabBtn-"]').forEach((btn) => {
     btn.className = 'px-4 py-2 rounded-lg text-slate-400 hover:text-white flex items-center space-x-2';
   });
-
   const activeBtn = document.getElementById(`tabBtn-${tabId}`);
   if (activeBtn) {
     activeBtn.className = 'px-4 py-2 rounded-lg bg-slate-800 text-white flex items-center space-x-2 border-b-2 border-emerald-500';
   }
 
+  // Atualiza botões Mobile (Bottom Nav)
+  document.querySelectorAll('[id^="mTabBtn-"]').forEach((btn) => {
+    btn.className = 'flex flex-col items-center py-1 px-3 text-slate-400';
+  });
+  const activeMobileBtn = document.getElementById(`mTabBtn-${tabId}`);
+  if (activeMobileBtn) {
+    activeMobileBtn.className = 'flex flex-col items-center py-1 px-3 text-emerald-400 font-semibold';
+  }
+
   if (tabId === 'audit') loadLogs();
   if (tabId === 'agenda') loadAgenda();
   if (tabId === 'templates') loadTemplates();
-  if (tabId === 'whatsapp') loadWhatsAppStatus();
   if (tabId === 'settings') loadConfig();
 
   if (window.lucide) window.lucide.createIcons();
