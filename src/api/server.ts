@@ -8,6 +8,7 @@ import { Engine } from '../core/engine.js';
 import { StorageService } from '../services/storage.service.js';
 import { TrelloService } from '../services/trello.service.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
+import { TelegramService } from '../services/telegram.service.js';
 
 export function createServer() {
   const app = express();

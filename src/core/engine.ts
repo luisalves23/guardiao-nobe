@@ -154,7 +154,7 @@ export class Engine {
   }
 
   /**
-   * PAUSAR EXPEDIENTE
+   * PAUSAR EXPEDIENTE (Move o card para a coluna mensal para pausar contagem)
    */
   public async pauseShift(): Promise<string> {
     if (this.state !== 'WORKING') {
@@ -162,22 +162,35 @@ export class Engine {
     }
 
     this.state = 'PAUSED';
+    const trello = TrelloService.getInstance();
+    const config = StorageService.getInstance().getConfig();
+
+    if (this.activeCardId && config.trello.boardId) {
+      try {
+        const monthlyList = await trello.findOrCreateMonthlyList(config.trello.boardId);
+        await trello.addComment(this.activeCardId, 'Pausa temporária do expediente - Contagem pausada.');
+        await trello.moveCard(this.activeCardId, monthlyList.id);
+      } catch (err: any) {
+        console.error('[Engine] Erro ao mover card no pause:', err.message);
+      }
+    }
+
     StorageService.getInstance().addLog({
       type: 'PAUSED',
-      message: 'Expediente pausado temporariamente.',
+      message: 'Expediente pausado temporariamente. Card movido para a coluna mensal.',
       source: 'SYSTEM',
     });
 
     await this.broadcastAlert(
-      '⏸️ *[Guardião Nobe]* Expediente pausado.'
+      '⏸️ *[Guardião Nobe]* Expediente pausado. Card movido para a pasta do mês para pausar a contagem.'
     );
 
     this.broadcastStatus();
-    return 'Expediente pausado.';
+    return 'Expediente pausado e card movido para a coluna do mês.';
   }
 
   /**
-   * RETOMAR EXPEDIENTE
+   * RETOMAR EXPEDIENTE (Restaura card se houver tempo ou cria novo se atingiu 4h)
    */
   public async resumeShift(): Promise<string> {
     if (this.state !== 'PAUSED' && this.state !== 'LUNCH') {
@@ -185,46 +198,90 @@ export class Engine {
     }
 
     this.state = 'WORKING';
-    this.lastCommentTime = Date.now();
-    this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+    const trello = TrelloService.getInstance();
+    const storage = StorageService.getInstance();
+    const config = storage.getConfig();
 
-    if (this.activeCardId) {
-      const templates = StorageService.getInstance().getConfig().fallbackTemplates || [];
-      const comment = templates.length > 0 ? templates[0] : 'Retomando atividades após pausa.';
-      await TrelloService.getInstance().addComment(this.activeCardId, comment);
+    const now = Date.now();
+    const cardAgeMinutes = this.cardStartTime ? (now - this.cardStartTime) / (1000 * 60) : 999;
+
+    // Se o card já atingiu o limite de ~3h50m (230 min) ou não existe card ativo
+    if (!this.activeCardId || cardAgeMinutes >= 230) {
+      const dateFormatted = formatTodayDate(new Date());
+      const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
+      const newCard = await trello.createCard(config.trello.workingListId, cardTitle, config.trello.memberId);
+      
+      this.activeCardId = newCard.id;
+      this.activeCardName = cardTitle;
+      this.cardStartTime = Date.now();
+      this.lastCommentTime = Date.now();
+      this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+      this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
+
+      await trello.addComment(newCard.id, 'Retorno do intervalo - Novo card ativo em Trabalhando Agora.');
+
+      storage.addLog({
+        type: 'RESUMED',
+        message: `Expediente retomado com novo card "${cardTitle}" (limite de 4h anterior completado).`,
+        source: 'SYSTEM',
+      });
+    } else {
+      // Ainda há tempo no card anterior: move de volta para "Trabalhando Agora"
+      await trello.moveCard(this.activeCardId, config.trello.workingListId);
+      this.lastCommentTime = Date.now();
+      this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+
+      const templates = config.fallbackTemplates || [];
+      const resumeComment = templates.length > 0 ? templates[0] : 'Retomando atividades após pausa - Contagem reativada.';
+      await trello.addComment(this.activeCardId, resumeComment);
+
+      storage.addLog({
+        type: 'RESUMED',
+        message: 'Expediente retomado. Card restaurado para Trabalhando Agora.',
+        source: 'SYSTEM',
+      });
     }
 
-    StorageService.getInstance().addLog({
-      type: 'RESUMED',
-      message: 'Expediente retomado.',
-      source: 'SYSTEM',
-    });
-
     await this.broadcastAlert(
-      '▶️ *[Guardião Nobe]* Expediente retomado com sucesso!'
+      '▶️ *[Guardião Nobe]* Expediente retomado com sucesso! Card ativo em Trabalhando Agora.'
     );
 
     this.broadcastStatus();
-    return 'Expediente retomado.';
+    return 'Expediente retomado com sucesso.';
   }
 
   /**
-   * INICIAR ALMOÇO
+   * INICIAR ALMOÇO (Move o card para a coluna mensal imediatamente)
    */
   public async startLunch(): Promise<string> {
     this.state = 'LUNCH';
-    StorageService.getInstance().addLog({
+    const trello = TrelloService.getInstance();
+    const storage = StorageService.getInstance();
+    const config = storage.getConfig();
+
+    if (this.activeCardId && config.trello.boardId) {
+      try {
+        const monthlyList = await trello.findOrCreateMonthlyList(config.trello.boardId);
+        await trello.addComment(this.activeCardId, 'Pausa para intervalo de almoço - Contagem pausada.');
+        await trello.moveCard(this.activeCardId, monthlyList.id);
+        console.log(`[Engine] Card movido para a pasta mensal "${monthlyList.name}" no almoço`);
+      } catch (err: any) {
+        console.error('[Engine] Erro ao mover card para o mês no almoço:', err.message);
+      }
+    }
+
+    storage.addLog({
       type: 'LUNCH_STARTED',
-      message: 'Pausa para almoço iniciada.',
+      message: 'Pausa para almoço iniciada. Card movido para a coluna mensal.',
       source: 'SYSTEM',
     });
 
     await this.broadcastAlert(
-      '🍽️ *[Guardião Nobe]* Pausa para almoço iniciada.'
+      '🍽️ *[Guardião Nobe]* Pausa para almoço iniciada! Card movido para a pasta do mês para não contar horas durante a refeição.'
     );
 
     this.broadcastStatus();
-    return 'Almoço iniciado.';
+    return 'Almoço iniciado e card movido para a coluna do mês.';
   }
 
   /**
@@ -484,17 +541,16 @@ export class Engine {
         );
       }
 
-      // C. AUTO-RESGATE A CADA 3 SEGUNDOS: Checa se "A Presidência" moveu o card para "EM ESPERA"
+      // C. AUTO-RESGATE & MONITORAMENTO DE COLUNA A CADA 3 SEGUNDOS
       try {
         const card = await trello.getCard(this.activeCardId);
 
+        // 1. Robô "A Presidência" moveu para "EM ESPERA"
         if (config.trello.waitListId && card.idList === config.trello.waitListId) {
           console.warn('[Engine] 🚨 AUTO-RESGATE ACIONADO (3s)! Card em "EM ESPERA". Restaurando...');
           
-          // Move de volta para "Trabalhando Agora"
           await trello.moveCard(this.activeCardId, config.trello.workingListId);
           
-          // Comentário selecionado a partir da lista de templates configurados pelo usuário
           const templates = config.fallbackTemplates || [];
           const rescueComment = templates.length > 0
             ? templates[Math.floor(Math.random() * templates.length)]
@@ -514,6 +570,64 @@ export class Engine {
           await this.broadcastAlert(
             `🚨 *[AUTO-RESGATE EXECUTADO EM 3s]*\n\nO robô "A Presidência" moveu seu card para *"EM ESPERA"*!\nO Guardião Nobe detectou instantaneamente, restaurou para *"Trabalhando Agora"* e postou:\n💬 _"${rescueComment}"_\n\nSuas horas continuam seguras sem desconto!`
           );
+        } 
+        // 2. Card foi movido para outra pasta (ex: Pasta Mês) enquanto o expediente está ativo
+        else if (card.idList !== config.trello.workingListId) {
+          const cardAgeMinutes = this.cardStartTime ? (now - this.cardStartTime) / (1000 * 60) : 0;
+
+          if (cardAgeMinutes >= 230) {
+            console.log('[Engine] Card movido e limite de 4h atingido. Abrindo novo card em Trabalhando Agora...');
+            const dateFormatted = formatTodayDate(new Date());
+            const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
+
+            const newCard = await trello.createCard(
+              config.trello.workingListId,
+              cardTitle,
+              config.trello.memberId
+            );
+
+            this.activeCardId = newCard.id;
+            this.activeCardName = cardTitle;
+            this.cardStartTime = Date.now();
+            this.lastCommentTime = Date.now();
+            this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+            this.nextRotationTargetTime = Date.now() + getRotationJitterMs();
+
+            await trello.addComment(
+              newCard.id,
+              'Continuidade do expediente - Novo card ativo em Trabalhando Agora.'
+            );
+
+            storage.addLog({
+              type: 'CARD_ROTATED',
+              message: `Card anterior completou limite de 4h. Novo card "${cardTitle}" aberto em Trabalhando Agora.`,
+              source: 'SYSTEM',
+              details: { newCardId: newCard.id, cardTitle },
+            });
+
+            await this.broadcastAlert(
+              `🔄 *[Guardião Nobe]* Card anterior atingiu 4h e foi arquivado.\nUm novo card (*${cardTitle}*) já foi aberto em "Trabalhando Agora" para manter suas horas ativas!`
+            );
+          } else {
+            console.log('[Engine] Card ainda possui tempo restante (< 4h). Restaurando para Trabalhando Agora...');
+            await trello.moveCard(this.activeCardId, config.trello.workingListId);
+            this.lastCommentTime = Date.now();
+            this.nextCommentTargetTime = Date.now() + getCommentJitterMs();
+
+            const templates = config.fallbackTemplates || [];
+            const resumeComment = templates.length > 0 ? templates[0] : 'Restaurando card em Trabalhando Agora - Tempo restante disponível.';
+            await trello.addComment(this.activeCardId, resumeComment);
+
+            storage.addLog({
+              type: 'RESUMED',
+              message: 'Card restaurado para Trabalhando Agora (tempo restante disponível).',
+              source: 'SYSTEM',
+            });
+
+            await this.broadcastAlert(
+              '⚠️ *[Guardião Nobe]* Card detectado fora da coluna de trabalho durante o expediente. Restaurado para *"Trabalhando Agora"* com tempo restante ativo!'
+            );
+          }
         }
       } catch (err: any) {
         // Tratamento de erro suave
