@@ -1,5 +1,5 @@
 import { StorageService } from '../../services/storage.service.js';
-import { TrelloCardsManager, TrelloListsManager } from '../trello/index.js';
+import { TrelloCardsManager, TrelloListsManager, TrelloTimeAuditor } from '../trello/index.js';
 import { MessageDispatcher, TelegramAdapter } from '../messaging/index.js';
 import { AgendaManager, formatTodayDate, formatHMS, getCommentJitterMs, getRotationJitterMs } from '../scheduler/index.js';
 import { ShiftState, LiveStatus, CommentSource } from '../../types/index.js';
@@ -62,6 +62,39 @@ export class ShiftOrchestrator {
     this.wsBroadcastCallback = cb;
   }
 
+  /**
+   * Sincroniza o tempo trabalhado milimetricamente através das Actions oficiais do Trello
+   */
+  public async syncTimeFromTrelloAudit(): Promise<void> {
+    const storage = StorageService.getInstance();
+    const config = storage.getConfig();
+    if (!config.trello.boardId || !config.trello.workingListId) return;
+
+    try {
+      const auditor = TrelloTimeAuditor.getInstance();
+      const daySummary = await auditor.calculateTodayBoardWorkingSeconds(
+        config.trello.boardId,
+        config.trello.workingListId,
+        config.hourlyRate || 18.0
+      );
+
+      this.todayWorkedSeconds = daySummary.totalSeconds;
+      this.todayWorkedMinutes = daySummary.totalSeconds / 60;
+
+      // Se temos um card ativo, audita especificamente o tempo do card para rotação
+      if (this.activeCardId) {
+        const cardSummary = await auditor.calculateCardWorkingSeconds(
+          this.activeCardId,
+          config.trello.workingListId
+        );
+        this.cardAccumulatedMinutes = cardSummary.seconds / 60;
+      }
+      this.saveCurrentState();
+    } catch (err: any) {
+      console.warn('[ShiftOrchestrator] Falha ao sincronizar auditoria Trello:', err.message);
+    }
+  }
+
   public getStatus(): LiveStatus {
     const config = StorageService.getInstance().getConfig();
     const telegram = TelegramAdapter.getInstance();
@@ -78,7 +111,7 @@ export class ShiftOrchestrator {
       isTrelloConnected: !!config.trello.apiKey && !!config.trello.token,
       todayMinutesWorked: Math.round(this.todayWorkedMinutes * 10) / 10,
       todaySecondsWorked: Math.floor(this.todayWorkedSeconds),
-      todayFormattedTime: formatHMS(this.todayWorkedSeconds),
+      todayFormattedTime: TrelloTimeAuditor.formatSecondsToHMS(this.todayWorkedSeconds),
       todayEarnings: Math.round((this.todayWorkedSeconds / 3600) * config.hourlyRate * 100) / 100,
       lastSyncTime: new Date().toISOString(),
     };
@@ -253,6 +286,8 @@ export class ShiftOrchestrator {
         `🚀 - [EXPEDIENTE INICIADO] - Card: "${this.activeCardName}" ativo em "Trabalhando Agora". Rotação prevista em ~${config.rotationLimitMinutes || 230}min.`
       );
 
+      TrelloTimeAuditor.getInstance().clearCache();
+      await this.syncTimeFromTrelloAudit();
       this.broadcastStatus();
       return `Expediente iniciado no card: "${this.activeCardName}"`;
     } catch (err: any) {
@@ -309,6 +344,8 @@ export class ShiftOrchestrator {
       '⏸️ - [EXPEDIENTE PAUSADO] - Card movido para a pasta do mês para pausar a contagem da Nobe.'
     );
 
+    TrelloTimeAuditor.getInstance().clearCache();
+    await this.syncTimeFromTrelloAudit();
     this.broadcastStatus();
     return 'Expediente pausado e card movido para a coluna do mês.';
   }
@@ -390,6 +427,8 @@ export class ShiftOrchestrator {
       `▶️ - [EXPEDIENTE RETOMADO] - Card "${this.activeCardName}" ativo em "Trabalhando Agora". Contagem de horas reativada.`
     );
 
+    TrelloTimeAuditor.getInstance().clearCache();
+    await this.syncTimeFromTrelloAudit();
     this.broadcastStatus();
     return 'Expediente retomado com sucesso.';
   }
@@ -434,6 +473,8 @@ export class ShiftOrchestrator {
       '🍽️ - [PAUSA PARA ALMOÇO] - Card movido para a pasta do mês. Contagem congelada durante o almoço.'
     );
 
+    TrelloTimeAuditor.getInstance().clearCache();
+    await this.syncTimeFromTrelloAudit();
     this.broadcastStatus();
     return 'Almoço iniciado e card movido para a coluna do mês.';
   }
@@ -465,14 +506,17 @@ export class ShiftOrchestrator {
       }
     }
 
+    TrelloTimeAuditor.getInstance().clearCache();
+    await this.syncTimeFromTrelloAudit();
+
     storage.addLog({
       type: 'SHIFT_ENDED',
-      message: `Expediente encerrado. Total de hoje: ${formatHMS(this.todayWorkedSeconds)}.`,
+      message: `Expediente encerrado. Total de hoje: ${TrelloTimeAuditor.formatSecondsToHMS(this.todayWorkedSeconds)}.`,
       source: 'SYSTEM',
     });
 
     await dispatcher.broadcastAlert(
-      `🏁 - [EXPEDIENTE ENCERRADO] - Dia finalizado! Total trabalhado: ${formatHMS(this.todayWorkedSeconds)} | Ganhos de hoje: R$ ${((this.todayWorkedSeconds / 3600) * config.hourlyRate).toFixed(2)}`
+      `🏁 - [EXPEDIENTE ENCERRADO] - Dia finalizado! Total trabalhado: ${TrelloTimeAuditor.formatSecondsToHMS(this.todayWorkedSeconds)} | Ganhos de hoje: R$ ${((this.todayWorkedSeconds / 3600) * config.hourlyRate).toFixed(2)}`
     );
 
     this.state = 'IDLE';

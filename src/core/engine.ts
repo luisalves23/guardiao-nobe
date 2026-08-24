@@ -97,8 +97,8 @@ export class Engine {
     const orchestrator = ShiftOrchestrator.getInstance();
     const watcher = AutoRescueWatcher.getInstance();
 
-    // 1. Atualiza tempo acumulado e checa virada de meia-noite
-    orchestrator.updateTime(elapsedMinutes);
+    // 1. Sincroniza cálculo milimétrico com base nas Actions do Trello
+    await orchestrator.syncTimeFromTrelloAudit();
     await orchestrator.handleMidnightDateShift();
 
     // 2. Rotação de 4 Horas (3h50 a 3h58)
