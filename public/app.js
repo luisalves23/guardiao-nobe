@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+  loadStatus();
   connectWebSocket();
   loadConfig();
   loadLogs();
@@ -17,7 +18,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Tick local a cada 1s para atualizar os timers regressivos suavemente
   setInterval(updateTimersDisplay, 1000);
+  // Polling de sincronização a cada 2.5s (caso WebSockets sofram latência na nuvem)
+  setInterval(loadStatus, 2500);
 });
+
+async function loadStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (res.ok) {
+      liveStatus = await res.json();
+      renderLiveStatus();
+    }
+  } catch (err) {
+    console.error('Erro ao buscar status HTTP:', err);
+  }
+}
 
 // Conexão WebSocket
 function connectWebSocket() {

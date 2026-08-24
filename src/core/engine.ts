@@ -10,6 +10,7 @@ import { LiveStatus } from '../types/index.js';
 export class Engine {
   private static instance: Engine;
   private lastTickTime: number = Date.now();
+  private loopTimer: NodeJS.Timeout | null = null;
 
   private constructor() {}
 
@@ -35,13 +36,18 @@ export class Engine {
 
     whatsapp.setCommandHandler(commandHandler);
     telegram.setCommandHandler(commandHandler);
-    await telegram.initialize();
-
     // Loop de monitoramento e proteção a cada 3 segundos
-    const timer = setInterval(() => {
+    if (this.loopTimer) clearInterval(this.loopTimer);
+    this.loopTimer = setInterval(() => {
       this.tick().catch((err) => console.error('[Engine] Erro no loop de proteção (3s):', err.message));
     }, 3000);
-    timer.unref();
+  }
+
+  public stop(): void {
+    if (this.loopTimer) {
+      clearInterval(this.loopTimer);
+      this.loopTimer = null;
+    }
   }
 
   public getStatus(): LiveStatus {

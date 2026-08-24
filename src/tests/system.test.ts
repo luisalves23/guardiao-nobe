@@ -192,6 +192,7 @@ test('9. API Server: Cobertura completa de rotas HTTP e JSON', async () => {
     assert.strictEqual(simSend.status, 200);
     assert.ok(simSend.body.success);
   } finally {
+    Engine.getInstance().stop();
     server.close();
   }
 });
