@@ -106,21 +106,30 @@ function renderLiveStatus() {
   const topHours = document.getElementById('topHours');
 
   // Badge de Estado
-  stateText.innerText = liveStatus.state;
   if (liveStatus.state === 'WORKING') {
+    stateText.innerText = 'TRABALHANDO';
     stateDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
     stateText.className = 'text-xs font-bold text-emerald-400 uppercase tracking-wider';
     document.getElementById('btnStart').classList.add('hidden');
     document.getElementById('btnPause').classList.remove('hidden');
     document.getElementById('btnResume').classList.add('hidden');
     document.getElementById('btnLunch').classList.remove('hidden');
-  } else if (liveStatus.state === 'PAUSED' || liveStatus.state === 'LUNCH') {
+  } else if (liveStatus.state === 'PAUSED') {
+    stateText.innerText = 'PAUSADO';
+    stateDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
+    stateText.className = 'text-xs font-bold text-amber-400 uppercase tracking-wider';
+    document.getElementById('btnStart').classList.add('hidden');
+    document.getElementById('btnPause').classList.add('hidden');
+    document.getElementById('btnResume').classList.remove('hidden');
+  } else if (liveStatus.state === 'LUNCH') {
+    stateText.innerText = 'ALMOÇO';
     stateDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
     stateText.className = 'text-xs font-bold text-amber-400 uppercase tracking-wider';
     document.getElementById('btnStart').classList.add('hidden');
     document.getElementById('btnPause').classList.add('hidden');
     document.getElementById('btnResume').classList.remove('hidden');
   } else {
+    stateText.innerText = 'EM ESPERA';
     stateDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-500';
     stateText.className = 'text-xs font-bold text-slate-400 uppercase tracking-wider';
     document.getElementById('btnStart').classList.remove('hidden');
