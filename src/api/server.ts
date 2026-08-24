@@ -60,8 +60,11 @@ export function createServer() {
     res.json(StorageService.getInstance().getConfig());
   });
 
-  app.post('/api/config', (req: Request, res: Response) => {
+  app.post('/api/config', async (req: Request, res: Response) => {
     const updated = StorageService.getInstance().saveConfig(req.body);
+    if (req.body.telegram?.botToken) {
+      await TelegramService.getInstance().initialize();
+    }
     res.json({ success: true, config: updated });
   });
 
