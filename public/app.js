@@ -236,16 +236,28 @@ function formatTimer(ms) {
 
 // Ações de Controle
 async function controlAction(action) {
+  console.log(`[Guardião UI] Executando ação de controle: ${action}`);
+  const stateText = document.getElementById('stateText');
+  const stateDot = document.getElementById('stateDot');
+  if (stateText) {
+    stateText.innerText = 'PROCESSANDO...';
+    stateText.className = 'text-xs font-bold text-blue-400 uppercase tracking-wider animate-pulse';
+  }
+  if (stateDot) {
+    stateDot.className = 'w-2.5 h-2.5 rounded-full bg-blue-500 animate-ping';
+  }
+
   try {
     const res = await fetch(`/api/control/${action}`, { method: 'POST' });
     const data = await res.json();
     if (!data.success) {
-      alert(`Erro: ${data.error || 'Falha ao executar ação'}`);
+      alert(`⚠️ Atenção: ${data.error || 'Falha ao executar ação'}`);
     }
     await loadStatus();
     loadLogs();
   } catch (err) {
-    alert(`Erro na requisição: ${err.message}`);
+    alert(`Erro de conexão com o servidor: ${err.message}`);
+    await loadStatus();
   }
 }
 
