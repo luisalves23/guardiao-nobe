@@ -43,10 +43,12 @@ export function createServer() {
     }
   });
 
-  // 0. Healthcheck & Keep-Alive (UptimeRobot 24/7)
-  app.get('/health', (_req: Request, res: Response) => {
+  // 0. Healthcheck & Keep-Alive (UptimeRobot & Render 24/7)
+  const healthHandler = (_req: Request, res: Response) => {
     res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
-  });
+  };
+  app.get('/health', healthHandler);
+  app.get('/healthz', healthHandler);
 
   // 1. Status Geral
   app.get('/api/status', (_req: Request, res: Response) => {
