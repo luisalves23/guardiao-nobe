@@ -6,9 +6,12 @@ import path from 'path';
 import fs from 'fs';
 import { Engine } from '../core/engine.js';
 import { StorageService } from '../services/storage.service.js';
+import { DatabaseService } from '../services/database.service.js';
 import { TrelloService } from '../services/trello.service.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { TelegramService } from '../services/telegram.service.js';
+import { MessageDispatcher } from '../modules/messaging/index.js';
+import { TrelloListsManager } from '../modules/trello/index.js';
 
 export function createServer() {
   const app = express();
@@ -142,6 +145,17 @@ export function createServer() {
     res.send(JSON.stringify(logs, null, 2));
   });
 
+  app.post('/api/logs/clear', (_req: Request, res: Response) => {
+    try {
+      StorageService.getInstance().clearLogs();
+      DatabaseService.getInstance().clearErrors();
+      DatabaseService.getInstance().clearActivities();
+      res.json({ success: true, message: 'Todos os logs e atividades foram limpos com sucesso.' });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   // 7. Controles de Expediente
   app.post('/api/control/start', async (_req: Request, res: Response) => {
     try {
@@ -245,6 +259,106 @@ export function createServer() {
     const sender = from || 'WebhookSender';
     const reply = await WhatsAppService.getInstance().handleIncomingMessage(sender, msgText);
     res.json({ success: true, reply });
+  });
+
+  // 9. Endpoints de Testes e Ajustes Rápidos
+  app.post('/api/test/comment-interval', (req: Request, res: Response) => {
+    try {
+      const { minMinutes, maxMinutes, testMode } = req.body;
+      const storage = StorageService.getInstance();
+      const cfg = storage.getConfig();
+      cfg.commentInterval = {
+        minMinutes: Number(minMinutes) || 20,
+        maxMinutes: Number(maxMinutes) || 25,
+        testMode: Boolean(testMode),
+      };
+      storage.saveConfig(cfg);
+      res.json({ success: true, commentInterval: cfg.commentInterval });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post('/api/test/ping-telegram', async (_req: Request, res: Response) => {
+    try {
+      const dispatcher = MessageDispatcher.getInstance();
+      await dispatcher.broadcastAlert('🔔 *[Teste de Comunicação]* - Conexão com o Guardião Nobe ativa e operacional!');
+      res.json({ success: true, sent: true });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post('/api/test/ping-trello', async (_req: Request, res: Response) => {
+    try {
+      const config = StorageService.getInstance().getConfig();
+      const listsManager = TrelloListsManager.getInstance();
+      const lists = config.trello.boardId ? await listsManager.getBoardLists(config.trello.boardId) : [];
+      res.json({ success: true, listsCount: lists.length, lists });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post('/api/test/trigger-question', async (_req: Request, res: Response) => {
+    try {
+      Engine.getInstance().sendPeriodicComment().catch(err => console.error('[Test API] Erro ao disparar comentário:', err.message));
+      res.json({ success: true, message: 'Pergunta de atividade disparada com timeout de 2min.' });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post('/api/schedule/weekly', (req: Request, res: Response) => {
+    try {
+      const { weeklySchedule } = req.body;
+      const storage = StorageService.getInstance();
+      const cfg = storage.getConfig();
+      cfg.weeklySchedule = weeklySchedule;
+      storage.saveConfig(cfg);
+      res.json({ success: true, weeklySchedule: cfg.weeklySchedule });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // ENDPOINTS DE BANCO DE DADOS (SQLite Relacional)
+  // ----------------------------------------------------
+  app.get('/api/db/activities', (req: Request, res: Response) => {
+    try {
+      const limit = Number(req.query.limit) || 100;
+      const category = req.query.category as string | undefined;
+      const errorsOnly = req.query.errorsOnly === 'true';
+      const db = DatabaseService.getInstance();
+      const activities = db.getRecentActivities(limit, category, errorsOnly);
+      res.json({ success: true, count: activities.length, activities });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.get('/api/db/sessions', (req: Request, res: Response) => {
+    try {
+      const dateStr = req.query.date as string | undefined;
+      const db = DatabaseService.getInstance();
+      const sessions = db.getTodayWorkSessions(dateStr);
+      const totalSeconds = db.getTodayWorkedSeconds(dateStr);
+      res.json({ success: true, count: sessions.length, totalSeconds, sessions });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.get('/api/db/errors', (req: Request, res: Response) => {
+    try {
+      const limit = Number(req.query.limit) || 50;
+      const db = DatabaseService.getInstance();
+      const errors = db.getRecentErrors(limit);
+      res.json({ success: true, count: errors.length, errors });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
   });
 
   // Servir arquivos estáticos da interface web sem cache no navegador

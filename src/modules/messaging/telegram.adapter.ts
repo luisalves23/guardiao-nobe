@@ -71,14 +71,44 @@ export class TelegramAdapter {
       const res = await axios.get(`https://api.telegram.org/bot${token}/getUpdates`, {
         params: {
           offset: this.lastUpdateId + 1,
-          timeout: 25,
+          timeout: 10,
         },
-        timeout: 30000,
+        timeout: 15000,
       });
 
       if (res.data?.ok && Array.isArray(res.data.result)) {
         for (const update of res.data.result) {
           this.lastUpdateId = update.update_id;
+
+          // 1. Trata botões inline (callback_query)
+          if (update.callback_query) {
+            const cb = update.callback_query;
+            const data = cb.data;
+            const cbChatId = String(cb.message?.chat?.id || cb.from?.id);
+
+            StorageService.getInstance().addLog({
+              type: 'COMMAND_RECEIVED',
+              message: `Botão interativo "${data}" clicado no Telegram.`,
+              source: 'TELEGRAM',
+              details: { callback_data: data },
+            });
+
+            if (this.commandHandler && data) {
+              const reply = await this.commandHandler(data, []);
+              if (reply && cbChatId) {
+                await this.sendMessage(cbChatId, reply);
+              }
+            }
+
+            try {
+              await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+                callback_query_id: cb.id,
+              });
+            } catch {}
+            continue;
+          }
+
+          // 2. Trata mensagens de texto
           const message = update.message;
           if (!message || !message.text) continue;
 
@@ -86,28 +116,39 @@ export class TelegramAdapter {
           const text = message.text.trim();
 
           const currentChatId = this.getChatId();
-          if (!currentChatId) {
-            StorageService.getInstance().saveConfig({
-              telegram: { botToken: token, chatId, enabled: true },
-            } as any);
-            console.log(`[TelegramAdapter] Chat ID salvo automaticamente: ${chatId}`);
+          if (!currentChatId || currentChatId !== chatId) {
+            const config = StorageService.getInstance().getConfig();
+            config.telegram = config.telegram || {};
+            config.telegram.chatId = chatId;
+            config.telegram.botToken = token;
+            config.telegram.enabled = true;
+            StorageService.getInstance().saveConfig(config);
+            console.log(`[TelegramAdapter] Chat ID sincronizado: ${chatId}`);
           }
 
           await this.handleIncomingMessage(chatId, text);
         }
       }
     } catch {
-      // Ignora timeouts de long polling
+      // Ignora timeouts de long polling normais
     }
 
     if (this.isPolling) {
-      setTimeout(() => this.pollLoop(), 1000);
+      setTimeout(() => this.pollLoop(), 500);
     }
   }
 
   public async handleIncomingMessage(chatId: string, text: string): Promise<string | void> {
     const cleanText = text.trim();
     if (!cleanText) return;
+
+    const currentChatId = this.getChatId();
+    if (!currentChatId || currentChatId !== chatId) {
+      const config = StorageService.getInstance().getConfig();
+      config.telegram = config.telegram || {};
+      config.telegram.chatId = chatId;
+      StorageService.getInstance().saveConfig(config);
+    }
 
     StorageService.getInstance().addLog({
       type: 'COMMENT_SENT',
@@ -120,16 +161,22 @@ export class TelegramAdapter {
       const resolve = this.pendingQuestionResolve;
       this.clearPendingQuestion();
 
+      // Remove prefixo /comentar ou !comentar se o usuário enviou com comando
+      let commentText = cleanText;
+      if (commentText.toLowerCase().startsWith('/comentar') || commentText.toLowerCase().startsWith('!comentar')) {
+        commentText = commentText.replace(/^[/!]comentar\s*/i, '').trim();
+      }
+
       StorageService.getInstance().addLog({
         type: 'QUESTION_ANSWERED',
-        message: `Resposta de atividade recebida do usuário no Telegram: "${cleanText}"`,
+        message: `Resposta de atividade recebida do usuário no Telegram: "${commentText}"`,
         source: 'TELEGRAM',
-        details: { text: cleanText },
+        details: { text: commentText },
       });
 
-      resolve(cleanText);
+      resolve(commentText);
 
-      const reply = `✅ - [COMENTÁRIO REGISTRADO] - Postado no Trello com sucesso:\n"${cleanText}"`;
+      const reply = `✅ - [COMENTÁRIO REGISTRADO] - Postado no Trello com sucesso:\n"${commentText}"`;
       await this.sendMessage(chatId, reply);
       return reply;
     }
@@ -215,7 +262,43 @@ export class TelegramAdapter {
   }
 
   /**
-   * Pergunta interativa com timeout de 2 minutos
+   * Lembrete interativo de pausa a cada 5 minutos com Inline Keyboard
+   */
+  public async sendPauseReminder(minutesPaused: number): Promise<void> {
+    const chatId = this.getChatId();
+    const token = this.getBotToken();
+    if (!chatId || !token) return;
+
+    const text =
+      `⏸️ - [LEMBRETE DE PAUSA] - Seu expediente está pausado há *${minutesPaused} minutos*.\n\n` +
+      `Seu card vigente está protegido na pasta do mês.\n` +
+      `Deseja retomar agora ou encerrar o dia?`;
+
+    try {
+      await axios.post(
+        `https://api.telegram.org/bot${token}/sendMessage`,
+        {
+          chat_id: chatId,
+          text,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '▶️ Retomar Agora', callback_data: 'voltar' },
+                { text: '🏁 Encerrar Dia', callback_data: 'encerrar' },
+              ],
+            ],
+          },
+        },
+        { timeout: 8000 }
+      );
+    } catch (err: any) {
+      console.error(`[TelegramAdapter] Erro ao enviar lembrete de pausa:`, err.message);
+    }
+  }
+
+  /**
+   * Pergunta interativa com janela completa de 2 minutos (120s)
    */
   public async askActivityQuestion(
     timeoutMs = 120000,
@@ -230,15 +313,18 @@ export class TelegramAdapter {
     this.clearPendingQuestion();
     this.isAwaitingAnswer = true;
 
+    const windowMinutes = Math.max(1, Math.round(timeoutMs / 60000));
+    const windowText = timeoutMs >= 60000 ? `${windowMinutes} minutos` : `${Math.round(timeoutMs / 1000)} segundos`;
+
     StorageService.getInstance().addLog({
       type: 'QUESTION_ASKED',
-      message: 'Pergunta de checagem de atividade enviada para o Telegram (janela de 2 min).',
+      message: `Pergunta de checagem de atividade enviada para o Telegram (janela de ${windowText}).`,
       source: 'TELEGRAM',
     });
 
     const questionMessage =
       '⏰ - [CHECAGEM DE ATIVIDADE] - Olá Luís! O que você está executando agora no seu expediente?\n\n' +
-      '_(Responda em até 2 minutos para registrar no Trello)_';
+      `_(Responda em até ${windowText} para registrar seu comentário no Trello)_`;
 
     return new Promise<string | null>((resolve) => {
       this.pendingQuestionResolve = (answer) => {
@@ -252,13 +338,13 @@ export class TelegramAdapter {
 
           StorageService.getInstance().addLog({
             type: 'QUESTION_TIMEOUT',
-            message: 'Limite de 2 minutos expirado no Telegram sem resposta do usuário.',
+            message: `Limite de ${windowText} expirado no Telegram sem resposta do usuário.`,
             source: 'TELEGRAM',
           });
 
           await this.sendMessage(
             chatId,
-            '⏱️ - [TEMPO ESGOTADO] - Limite de 2 min expirado. Ativando comentário automático de proteção...'
+            '⏱️ - [TEMPO ESGOTADO] - Limite de tempo expirado. Ativando comentário automático de proteção...'
           );
           if (onTimeout) onTimeout();
           resolve(null);

@@ -23,6 +23,43 @@ export class TrelloCardsManager {
     return TrelloCardsManager.instance;
   }
 
+  /**
+   * Identifica se um card é um "Card de Trabalho" gerenciado pelo Guardião
+   * (Cards de melhoria/compartilhados possuem múltiplos membros ou outros termos)
+   */
+  public isWorkCard(card: TrelloCard, currentUserName?: string, currentMemberId?: string): boolean {
+    if (!card) return false;
+
+    // Se o card possui mais de 1 membro atribuído, é um card de equipe/melhoria/projeto
+    if (card.idMembers && card.idMembers.length > 1) {
+      return false;
+    }
+
+    const name = (card.name || '').toLowerCase();
+
+    // Se contiver termos explícitos de melhoria ou bugfix
+    if (name.startsWith('melhoria:') || name.startsWith('[melhoria]') || name.includes('bugfix:') || name.includes('sprint:')) {
+      return false;
+    }
+
+    // Padrão primário: "Trabalho do Dia" ou "Trabalho de Hoje"
+    if (name.includes('trabalho do dia') || name.includes('trabalho de hoje')) {
+      return true;
+    }
+
+    // Se possui exatamente o membro único configurado do usuário
+    if (currentMemberId && card.idMembers && card.idMembers.length === 1 && card.idMembers[0] === currentMemberId) {
+      return true;
+    }
+
+    // Se o título contém o nome do usuário (ex: "Luis Alves")
+    if (currentUserName && name.includes(currentUserName.toLowerCase())) {
+      return true;
+    }
+
+    return false;
+  }
+
   public async getCard(cardId: string): Promise<TrelloCard> {
     const client = TrelloClient.getInstance();
     const res = await client.getHttp().get(`/cards/${cardId}`, {
@@ -122,5 +159,28 @@ export class TrelloCardsManager {
     });
 
     return res.data;
+  }
+
+  public async getLastComment(cardId: string): Promise<{ date: string; text: string } | null> {
+    const client = TrelloClient.getInstance();
+    try {
+      const res = await client.getHttp().get(`/cards/${cardId}/actions`, {
+        params: {
+          ...client.getAuthParams(),
+          filter: 'commentCard',
+          limit: 1,
+        },
+      });
+      if (res.data && res.data.length > 0) {
+        return {
+          date: res.data[0].date,
+          text: res.data[0].data?.text || '',
+        };
+      }
+      return null;
+    } catch (err: any) {
+      console.warn(`[TrelloCardsManager] Falha ao obter último comentário do card ${cardId}:`, err.message);
+      return null;
+    }
   }
 }

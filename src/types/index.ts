@@ -42,6 +42,34 @@ export interface AgendaItem {
   completed?: boolean;
 }
 
+export interface DaySchedule {
+  enabled: boolean;
+  start: string;       // "09:00"
+  end: string;         // "18:00"
+  lunchStart?: string; // "12:00"
+  lunchEnd?: string;   // "13:00"
+}
+
+export interface WeeklyScheduleConfig {
+  autoStartEnabled: boolean;
+  autoEndEnabled: boolean;
+  days: {
+    seg: DaySchedule;
+    ter: DaySchedule;
+    qua: DaySchedule;
+    qui: DaySchedule;
+    sex: DaySchedule;
+    sab: DaySchedule;
+    dom: DaySchedule;
+  };
+}
+
+export interface CommentIntervalConfig {
+  minMinutes: number; // ex: 20
+  maxMinutes: number; // ex: 25
+  testMode?: boolean;
+}
+
 export interface ActionMessageConfig {
   text: string;
   enabled: boolean;
@@ -65,6 +93,8 @@ export interface AppConfig {
     lunchStart: string;
     lunchEnd: string;
   };
+  weeklySchedule?: WeeklyScheduleConfig;
+  commentInterval?: CommentIntervalConfig;
   hourlyRate: number;
   notificationPhone: string;
   rotationLimitMinutes?: number; // Padrão: 230 (~3h50m)

@@ -47,23 +47,28 @@ export class AutoRescueWatcher {
 
     try {
       // 1. Busca os cards abertos em "Trabalhando Agora" no Trello
-      const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
+      const allCardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
+      
+      // Filtra estritamente apenas Cards de Trabalho (ignora cards de melhoria/compartilhados)
+      const workCards = (allCardsInWorking || []).filter((c) =>
+        trelloCards.isWorkCard(c, config.trello.userName, config.trello.memberId)
+      );
 
-      // CENÁRIO 1: Existe pelo menos 1 card aberto na coluna "Trabalhando Agora"
-      if (cardsInWorking && cardsInWorking.length > 0) {
-        const topCard = cardsInWorking[0];
+      // CENÁRIO 1: Existe pelo menos 1 card de trabalho aberto na coluna "Trabalhando Agora"
+      if (workCards && workCards.length > 0) {
+        const topCard = workCards[0];
 
         // Sincroniza o ID do card ativo caso seja diferente
         if (ctx.activeCardId !== topCard.id) {
           ctx.onCardAdopted(topCard.id, topCard.name);
         }
 
-        // Se houver mais de 1 card concorrente em "Trabalhando Agora", move os excedentes para a pasta do mês
-        if (cardsInWorking.length > 1 && config.trello.boardId) {
+        // Se houver mais de 1 card de trabalho concorrente em "Trabalhando Agora", move os excedentes para a pasta do mês
+        if (workCards.length > 1 && config.trello.boardId) {
           const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
-          for (let i = 1; i < cardsInWorking.length; i++) {
-            console.log(`[AutoRescueWatcher] Movendo card concorrente excedente "${cardsInWorking[i].name}" para a pasta do mês...`);
-            await trelloCards.moveCard(cardsInWorking[i].id, monthlyList.id);
+          for (let i = 1; i < workCards.length; i++) {
+            console.log(`[AutoRescueWatcher] Movendo card de trabalho concorrente excedente "${workCards[i].name}" para a pasta do mês...`);
+            await trelloCards.moveCard(workCards[i].id, monthlyList.id);
           }
         }
         return;

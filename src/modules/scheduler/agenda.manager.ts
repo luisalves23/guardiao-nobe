@@ -59,4 +59,17 @@ export class AgendaManager {
     }
     return 'Reativando contagem de horas do card.';
   }
+
+  public getRotationComment(): string {
+    const config = StorageService.getInstance().getConfig();
+    if (config.actionMessages?.rotate?.enabled !== false && config.actionMessages?.rotate?.text) {
+      return config.actionMessages.rotate.text;
+    }
+    const templates = config.fallbackTemplates || [];
+    if (templates.length > 0) {
+      const randomIndex = Math.floor(Math.random() * templates.length);
+      return templates[randomIndex];
+    }
+    return 'Card de 4h atingiu o limite de tempo. Rotacionando para novo card de trabalho.';
+  }
 }

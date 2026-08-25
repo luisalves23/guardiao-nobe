@@ -30,13 +30,16 @@ export function getRotationJitterMs(): number {
 }
 
 /**
- * Formata a data atual no formato brasileiro estrito DD/MM/AAAA.
+ * Formata a data atual no formato brasileiro estrito DD/MM/AAAA no fuso horário de Brasília.
  */
 export function formatTodayDate(date = new Date()): string {
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
+  const formatter = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  return formatter.format(date);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { ShiftOrchestrator } from '../modules/shift/index.js';
+import { ShiftOrchestrator, ActiveCardTracker } from '../modules/shift/index.js';
 import { AutoRescueWatcher } from '../modules/watcher/index.js';
 import { TelegramAdapter } from '../modules/messaging/index.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
@@ -36,6 +36,14 @@ export class Engine {
 
     whatsapp.setCommandHandler(commandHandler);
     telegram.setCommandHandler(commandHandler);
+
+    // Executa descoberta e reconexão automática de card de trabalho existente no Trello
+    try {
+      await ShiftOrchestrator.getInstance().autoDiscoverActiveCardOnStartup();
+    } catch (err: any) {
+      console.warn('[Engine] Aviso na descoberta inicial de cards:', err.message);
+    }
+
     // Loop de monitoramento e proteção a cada 3 segundos
     if (this.loopTimer) clearInterval(this.loopTimer);
     this.loopTimer = setInterval(() => {
@@ -101,15 +109,23 @@ export class Engine {
     await orchestrator.syncTimeFromTrelloAudit();
     await orchestrator.handleMidnightDateShift();
 
-    // 2. Rotação de 4 Horas (3h50 a 3h58)
+    // 2. Rotação de 4 Horas (3h50 a 3h58 ou se atingiu o limite de idade do card)
     const nextRotation = orchestrator.getNextRotationTargetTime();
-    if (orchestrator.getState() === 'WORKING' && nextRotation && now >= nextRotation) {
-      await orchestrator.rotateCard();
+    const cardTracker = ActiveCardTracker.getInstance();
+    if (orchestrator.getState() === 'WORKING') {
+      if ((nextRotation && now >= nextRotation) || cardTracker.getState().isRotationDue) {
+        await orchestrator.rotateCard();
+      }
     }
 
-    // 3. Comentário Periódico com Jitter (20 a 25 min)
+    // 3. Comentário Periódico com Jitter (Lead-time de 20 segundos de antecipação)
     const nextComment = orchestrator.getNextCommentTargetTime();
-    if (orchestrator.getState() === 'WORKING' && nextComment && now >= nextComment && !orchestrator.isCommentInProgress()) {
+    if (
+      orchestrator.getState() === 'WORKING' &&
+      nextComment &&
+      now >= (nextComment - 20000) &&
+      !orchestrator.isCommentInProgress()
+    ) {
       orchestrator.sendPeriodicComment().catch((err) =>
         console.error('[Engine] Erro no sendPeriodicComment:', err.message)
       );
@@ -165,12 +181,13 @@ export class Engine {
         if (!cardId) return 'Nenhum card ativo no momento.';
         
         await TrelloCardsManager.getInstance().addComment(cardId, text);
+        ActiveCardTracker.getInstance().recordComment(Date.now());
         orchestrator.setRescued();
         
         StorageService.getInstance().addLog({
           type: 'COMMENT_SENT',
           message: `Comentário manual enviado: "${text}"`,
-          source: 'WHATSAPP',
+          source: 'TELEGRAM',
         });
         return `✅ Comentário registrado no card com sucesso:\n"${text}"`;
       }

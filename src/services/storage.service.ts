@@ -34,6 +34,24 @@ const DEFAULT_CONFIG: AppConfig = {
     lunchStart: '12:00',
     lunchEnd: '13:00',
   },
+  weeklySchedule: {
+    autoStartEnabled: false,
+    autoEndEnabled: false,
+    days: {
+      seg: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+      ter: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+      qua: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+      qui: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+      sex: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+      sab: { enabled: false, start: '08:00', end: '12:00', lunchStart: '12:00', lunchEnd: '13:00' },
+      dom: { enabled: false, start: '08:00', end: '12:00', lunchStart: '12:00', lunchEnd: '13:00' },
+    },
+  },
+  commentInterval: {
+    minMinutes: 20,
+    maxMinutes: 25,
+    testMode: false,
+  },
   hourlyRate: 18.0,
   notificationPhone: process.env.WHATSAPP_NOTIFICATION_PHONE || '',
   rotationLimitMinutes: 230,
@@ -184,6 +202,11 @@ export class StorageService {
 
   public getAllLogs(): AuditLog[] {
     return this.logs;
+  }
+
+  public clearLogs(): void {
+    this.logs = [];
+    this.persistLogs();
   }
 
   private pruneOldLogs() {

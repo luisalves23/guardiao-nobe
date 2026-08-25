@@ -3,6 +3,20 @@ let ws = null;
 let currentTab = 'audit';
 let configData = null;
 
+// Helpers Globais Seguros para Manipulação de DOM
+const setVal = (id, val) => {
+  const el = document.getElementById(id);
+  if (el) el.value = val;
+};
+const setChecked = (id, val) => {
+  const el = document.getElementById(id);
+  if (el) el.checked = Boolean(val);
+};
+const setText = (id, val) => {
+  const el = document.getElementById(id);
+  if (el) el.innerText = val;
+};
+
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) {
@@ -71,23 +85,25 @@ function switchTab(tabId) {
 
   // Atualiza botões Desktop
   document.querySelectorAll('[id^="tabBtn-"]').forEach((btn) => {
-    btn.className = 'px-4 py-2 rounded-lg text-slate-400 hover:text-white flex items-center space-x-2';
+    btn.className = 'px-3.5 py-2 rounded-lg text-slate-400 hover:text-white flex items-center space-x-2 whitespace-nowrap';
   });
   const activeBtn = document.getElementById(`tabBtn-${tabId}`);
   if (activeBtn) {
-    activeBtn.className = 'px-4 py-2 rounded-lg bg-slate-800 text-white flex items-center space-x-2 border-b-2 border-emerald-500';
+    activeBtn.className = 'px-3.5 py-2 rounded-lg bg-slate-800 text-white flex items-center space-x-2 border-b-2 border-emerald-500 whitespace-nowrap';
   }
 
   // Atualiza botões Mobile (Bottom Nav)
   document.querySelectorAll('[id^="mTabBtn-"]').forEach((btn) => {
-    btn.className = 'flex flex-col items-center py-1 px-3 text-slate-400';
+    btn.className = 'flex flex-col items-center py-1 px-2 text-slate-400';
   });
   const activeMobileBtn = document.getElementById(`mTabBtn-${tabId}`);
   if (activeMobileBtn) {
-    activeMobileBtn.className = 'flex flex-col items-center py-1 px-3 text-emerald-400 font-semibold';
+    activeMobileBtn.className = 'flex flex-col items-center py-1 px-2 text-emerald-400 font-semibold';
   }
 
   if (tabId === 'audit') loadLogs();
+  if (tabId === 'schedule') loadWeeklySchedule();
+  if (tabId === 'test') loadCommentInterval();
   if (tabId === 'agenda') loadAgenda();
   if (tabId === 'templates') loadTemplates();
   if (tabId === 'settings') loadConfig();
@@ -182,7 +198,7 @@ function updateTimersDisplay() {
   if (!liveStatus || liveStatus.state !== 'WORKING') {
     document.getElementById('countdownComment').innerText = '--:--';
     document.getElementById('progressComment').style.width = '0%';
-    document.getElementById('countdownRotation').innerText = '--:--';
+    document.getElementById('countdownRotation').innerText = '--:--:--';
     document.getElementById('progressRotation').style.width = '0%';
     return;
   }
@@ -196,7 +212,7 @@ function updateTimersDisplay() {
 
   const now = Date.now();
 
-  // 1. Contador de Comentário
+  // 1. Contador de Comentário (MM:SS ou HH:MM:SS se > 1h)
   if (liveStatus.nextCommentTargetTime) {
     const target = new Date(liveStatus.nextCommentTargetTime).getTime();
     const remaining = Math.max(0, target - now);
@@ -208,11 +224,11 @@ function updateTimersDisplay() {
     document.getElementById('progressComment').style.width = `${progress}%`;
   }
 
-  // 2. Contador de Rotação de 4h
+  // 2. Contador de Rotação de 4h (Regressivo Digital HH:MM:SS)
   if (liveStatus.nextRotationTargetTime) {
     const target = new Date(liveStatus.nextRotationTargetTime).getTime();
     const remaining = Math.max(0, target - now);
-    document.getElementById('countdownRotation').innerText = formatTimer(remaining);
+    document.getElementById('countdownRotation').innerText = formatHMSCountdown(remaining);
 
     // Progresso baseado em janela de 235 minutos (3h55)
     const total = 235 * 60 * 1000;
@@ -228,10 +244,22 @@ function formatTimer(ms) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
+  const pad = (n) => n.toString().padStart(2, '0');
   if (hours > 0) {
-    return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   }
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  return `${pad(minutes)}:${pad(seconds)}`;
+}
+
+function formatHMSCountdown(ms) {
+  if (ms <= 0) return '00:00:00';
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const pad = (n) => n.toString().padStart(2, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
 // Ações de Controle
@@ -284,116 +312,147 @@ async function promptQuickComment() {
 }
 
 // Carregar Logs de Auditoria (30 Dias)
-async function loadLogs() {
-  try {
-    const res = await fetch('/api/logs?limit=100');
-    const logs = await res.json();
-    const container = document.getElementById('logsContainer');
+// ----------------------------------------------------
+// BANCO DE DADOS: SESSÕES DE TRABALHO (SQLITE)
+// ----------------------------------------------------
+async function loadDbSessions() {
+  const container = document.getElementById('dbSessionsContainer');
+  if (!container) return;
 
-    if (!logs || logs.length === 0) {
-      container.innerHTML = '<div class="p-6 text-center text-sm text-slate-500">Nenhum evento registrado ainda.</div>';
+  try {
+    const res = await fetch('/api/db/sessions');
+    const data = await res.json();
+
+    if (!data.sessions || data.sessions.length === 0) {
+      container.innerHTML = '<div class="p-4 text-center text-xs text-slate-500">Nenhuma sessão de trabalho registrada hoje no banco de dados.</div>';
       return;
     }
 
-    container.innerHTML = logs
-      .map((log) => {
-        const time = new Date(log.timestamp).toLocaleString('pt-BR');
-        let badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
-        let icon = 'info';
+    const formatSec = (sec) => {
+      const s = Math.floor(sec);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const secs = s % 60;
+      return `${String(h).padStart(2, '0')}h${String(m).padStart(2, '0')}min${String(secs).padStart(2, '0')}seg`;
+    };
 
-        switch (log.type) {
-          case 'AUTO_RESCUED':
-            badgeColor = 'bg-rose-950/80 text-rose-400 border-rose-800';
-            icon = 'shield-alert';
-            break;
-          case 'CARD_ROTATED':
-            badgeColor = 'bg-purple-950/80 text-purple-400 border-purple-800';
-            icon = 'refresh-cw';
-            break;
-          case 'CARD_CREATED':
-            badgeColor = 'bg-sky-950/80 text-sky-400 border-sky-800';
-            icon = 'plus-circle';
-            break;
-          case 'CARD_MOVED':
-            badgeColor = 'bg-blue-950/80 text-blue-400 border-blue-800';
-            icon = 'arrow-right-left';
-            break;
-          case 'CARD_UNARCHIVED':
-            badgeColor = 'bg-fuchsia-950/80 text-fuchsia-400 border-fuchsia-800';
-            icon = 'archive-restore';
-            break;
-          case 'CARD_ADOPTED':
-            badgeColor = 'bg-cyan-950/80 text-cyan-400 border-cyan-800';
-            icon = 'check-circle';
-            break;
-          case 'COMMENT_SENT':
-            badgeColor = 'bg-indigo-950/80 text-indigo-400 border-indigo-800';
-            icon = 'message-square';
-            break;
-          case 'QUESTION_ASKED':
-            badgeColor = 'bg-yellow-950/80 text-yellow-400 border-yellow-800';
-            icon = 'help-circle';
-            break;
-          case 'QUESTION_ANSWERED':
-            badgeColor = 'bg-emerald-950/80 text-emerald-400 border-emerald-800';
-            icon = 'message-circle';
-            break;
-          case 'QUESTION_TIMEOUT':
-            badgeColor = 'bg-rose-950/80 text-rose-400 border-rose-800';
-            icon = 'clock';
-            break;
-          case 'SHIFT_STARTED':
-          case 'RESUMED':
+    container.innerHTML = data.sessions
+      .map((s) => {
+        const startTime = new Date(s.start_time).toLocaleTimeString('pt-BR');
+        const endTime = s.end_time ? new Date(s.end_time).toLocaleTimeString('pt-BR') : '🟢 EM ANDAMENTO';
+        const durationStr = formatSec(s.duration_seconds || (Date.now() - s.start_time) / 1000);
+
+        let stateBadge = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+        let stateText = 'TRABALHANDO';
+
+        if (s.state === 'PAUSED') {
+          stateBadge = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+          stateText = 'PAUSA';
+        } else if (s.state === 'LUNCH') {
+          stateBadge = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+          stateText = 'ALMOÇO';
+        }
+
+        const reasonBadge = s.end_reason
+          ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800 font-mono">${s.end_reason}</span>`
+          : '';
+
+        return `
+          <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div class="flex items-center space-x-2.5">
+              <span class="px-2 py-0.5 rounded-md border ${stateBadge} font-bold text-[10px] tracking-wide uppercase">
+                ${stateText}
+              </span>
+              <div class="font-mono text-slate-300">
+                <span>${startTime}</span>
+                <span class="text-slate-500 mx-1">➜</span>
+                <span class="${s.is_active ? 'text-emerald-400 font-bold' : 'text-slate-300'}">${endTime}</span>
+              </div>
+            </div>
+
+            <div class="flex items-center space-x-3 text-right self-end sm:self-auto">
+              ${reasonBadge}
+              <div class="font-mono font-bold text-emerald-400 text-xs">${durationStr}</div>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    console.error('Erro ao carregar sessões:', err);
+  }
+}
+
+// ----------------------------------------------------
+// BANCO DE DADOS: ATIVIDADES AUDITÁVEIS
+// ----------------------------------------------------
+async function loadDbActivities() {
+  const container = document.getElementById('logsContainer');
+  if (!container) return;
+
+  const category = document.getElementById('activityCategoryFilter')?.value || '';
+  const isErrorOnly = category === 'ERROR';
+
+  try {
+    let url = `/api/db/activities?limit=100`;
+    if (category && category !== 'ERROR') url += `&category=${category}`;
+    if (isErrorOnly) url += `&errorsOnly=true`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+    const list = data.activities || [];
+
+    if (list.length === 0) {
+      container.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">Nenhuma atividade encontrada com o filtro selecionado.</div>';
+      return;
+    }
+
+    container.innerHTML = list
+      .map((item) => {
+        const time = new Date(item.timestamp).toLocaleString('pt-BR');
+        let badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
+        let icon = 'activity';
+
+        switch (item.category) {
+          case 'CONTROL':
             badgeColor = 'bg-emerald-950/80 text-emerald-400 border-emerald-800';
             icon = 'play-circle';
             break;
-          case 'SHIFT_ENDED':
-          case 'PAUSED':
-          case 'LUNCH_STARTED':
-            badgeColor = 'bg-amber-950/80 text-amber-400 border-amber-800';
-            icon = 'pause-circle';
+          case 'TRELLO':
+            badgeColor = 'bg-blue-950/80 text-blue-400 border-blue-800';
+            icon = 'layout-grid';
             break;
-          case 'MIDNIGHT_ROTATION':
-            badgeColor = 'bg-violet-950/80 text-violet-400 border-violet-800';
-            icon = 'moon';
-            break;
-          case 'COMMAND_RECEIVED':
-            badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
-            icon = 'terminal';
-            break;
-          case 'JITTER_CALCULATED':
-            badgeColor = 'bg-teal-950/80 text-teal-400 border-teal-800';
-            icon = 'timer';
+          case 'TELEGRAM':
+            badgeColor = 'bg-sky-950/80 text-sky-400 border-sky-800';
+            icon = 'send';
             break;
           case 'ERROR':
-            badgeColor = 'bg-red-950/80 text-red-400 border-red-800';
+            badgeColor = 'bg-rose-950/80 text-rose-400 border-rose-800';
             icon = 'alert-triangle';
             break;
         }
 
-        const sourceLabel = log.source
-          ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 ml-2 font-mono">${log.source}</span>`
-          : '';
-
         let detailsHtml = '';
-        if (log.details && Object.keys(log.details).length > 0) {
-          const detailsStr = Object.entries(log.details)
-            .map(([k, v]) => `<span class="text-slate-400">${k}:</span> <span class="text-slate-200">${typeof v === 'object' ? JSON.stringify(v) : v}</span>`)
-            .join(' • ');
-          detailsHtml = `<div class="text-[11px] bg-slate-950/50 rounded px-2 py-1 mt-1.5 border border-slate-800/80 font-mono text-slate-400">${detailsStr}</div>`;
+        if (item.details) {
+          detailsHtml = `<div class="text-[11px] bg-slate-900/90 rounded-lg p-2 mt-1.5 border border-slate-800 font-mono text-slate-400 overflow-x-auto whitespace-pre-wrap">${item.details}</div>`;
         }
 
         return `
-          <div class="p-3 sm:p-3.5 flex items-start space-x-3 hover:bg-slate-800/30 transition">
+          <div class="p-3 sm:p-3.5 flex items-start space-x-3 hover:bg-slate-900/40 transition">
             <div class="p-2 rounded-lg border ${badgeColor} shrink-0 mt-0.5">
               <i data-lucide="${icon}" class="w-4 h-4"></i>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-slate-200 flex items-center">${log.type}${sourceLabel}</span>
-                <span class="text-slate-500 font-mono text-[11px]">${time}</span>
+                <span class="font-semibold text-slate-200 flex items-center space-x-2">
+                  <span>${item.action}</span>
+                  <span class="text-[9px] uppercase px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">${item.category}</span>
+                </span>
+                <span class="text-slate-500 font-mono text-[10px]">${time}</span>
               </div>
-              <p class="text-xs text-slate-300 mt-1">${log.message}</p>
+              <p class="text-xs text-slate-300 mt-0.5">${item.title}</p>
               ${detailsHtml}
             </div>
           </div>
@@ -403,8 +462,59 @@ async function loadLogs() {
 
     if (window.lucide) window.lucide.createIcons();
   } catch (err) {
-    console.error('Erro ao carregar logs:', err);
+    console.error('Erro ao carregar atividades do banco:', err);
   }
+}
+
+// ----------------------------------------------------
+// BANCO DE DADOS: DIAGNÓSTICO DE ERROS
+// ----------------------------------------------------
+async function loadDbErrors() {
+  const container = document.getElementById('dbErrorsContainer');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/db/errors?limit=50');
+    const data = await res.json();
+    const errors = data.errors || [];
+
+    if (errors.length === 0) {
+      container.innerHTML = '<div class="p-4 text-center text-xs text-emerald-400/80 font-medium">✅ Nenhum erro registrado no banco de dados. Sistema estável.</div>';
+      return;
+    }
+
+    container.innerHTML = errors
+      .map((err) => {
+        const time = new Date(err.timestamp).toLocaleString('pt-BR');
+        return `
+          <div class="p-3 rounded-xl bg-rose-950/20 border border-rose-800/40 space-y-1 text-xs">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-rose-400 flex items-center space-x-1.5">
+                <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
+                <span>[${err.module}] ${err.error_code || 'ERRO'}</span>
+              </span>
+              <span class="font-mono text-[10px] text-slate-500">${time}</span>
+            </div>
+            <p class="text-slate-200 font-medium">${err.error_message}</p>
+            ${err.context_json ? `<div class="text-[10px] font-mono text-slate-400 bg-slate-950/80 p-2 rounded border border-slate-800 overflow-x-auto whitespace-pre-wrap">${err.context_json}</div>` : ''}
+            ${err.stack_trace ? `<details class="text-[10px] text-slate-500 cursor-pointer pt-1"><summary>Ver Stack Trace</summary><pre class="mt-1 p-2 bg-slate-950 rounded border border-slate-800 text-rose-300 font-mono overflow-x-auto">${err.stack_trace}</pre></details>` : ''}
+          </div>
+        `;
+      })
+      .join('');
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    console.error('Erro ao carregar diagnóstico de erros:', err);
+  }
+}
+
+async function loadLogs() {
+  await Promise.all([
+    loadDbSessions(),
+    loadDbActivities(),
+    loadDbErrors(),
+  ]);
 }
 
 // Carregar Agenda
@@ -620,24 +730,31 @@ function exportLogs() {
   window.open('/api/logs/export', '_blank');
 }
 
+async function clearAllLogs() {
+  if (!confirm('Deseja realmente limpar todos os logs e histórico de auditoria do sistema?')) {
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/logs/clear', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      await loadLogs();
+      alert('Logs e histórico limpos com sucesso!');
+    } else {
+      alert('Erro ao limpar logs: ' + (data.error || 'Erro desconhecido'));
+    }
+  } catch (err) {
+    console.error('Erro ao limpar logs:', err);
+    alert('Erro ao conectar ao servidor para limpar logs.');
+  }
+}
+
 // Configurações
 async function loadConfig() {
   try {
     const res = await fetch('/api/config');
     configData = await res.json();
-
-    const setVal = (id, val) => {
-      const el = document.getElementById(id);
-      if (el) el.value = val;
-    };
-    const setChecked = (id, val) => {
-      const el = document.getElementById(id);
-      if (el) el.checked = val;
-    };
-    const setText = (id, val) => {
-      const el = document.getElementById(id);
-      if (el) el.innerText = val;
-    };
 
     setVal('cfgApiKey', configData.trello.apiKey || '');
     setVal('cfgToken', configData.trello.token || '');
@@ -747,6 +864,7 @@ async function saveSettings(e) {
 
 async function testTrello() {
   const feedback = document.getElementById('trelloTestFeedback');
+  if (!feedback) return;
   feedback.className = 'self-center text-xs font-semibold text-slate-400';
   feedback.innerText = 'Testando conexão com a API do Trello...';
 
@@ -766,6 +884,278 @@ async function testTrello() {
   }
 }
 
+// ----------------------------------------------------
+// AGENDA SEMANAL (HORÁRIOS DE TRABALHO)
+// ----------------------------------------------------
+const DAY_LABELS = {
+  seg: 'Segunda-feira',
+  ter: 'Terça-feira',
+  qua: 'Quarta-feira',
+  qui: 'Quinta-feira',
+  sex: 'Sexta-feira',
+  sab: 'Sábado',
+  dom: 'Domingo',
+};
+
+async function loadWeeklySchedule() {
+  const container = document.getElementById('weeklyScheduleDaysContainer');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    const sched = cfg.weeklySchedule || {
+      autoStartEnabled: false,
+      autoEndEnabled: false,
+      days: {
+        seg: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+        ter: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+        qua: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+        qui: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+        sex: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00' },
+        sab: { enabled: false, start: '08:00', end: '12:00', lunchStart: '12:00', lunchEnd: '13:00' },
+        dom: { enabled: false, start: '08:00', end: '12:00', lunchStart: '12:00', lunchEnd: '13:00' },
+      }
+    };
+
+    setChecked('schedAutoStart', !!sched.autoStartEnabled);
+    setChecked('schedAutoEnd', !!sched.autoEndEnabled);
+
+    container.innerHTML = '';
+    Object.keys(DAY_LABELS).forEach((dayKey) => {
+      const dayData = (sched.days && sched.days[dayKey]) || {
+        enabled: dayKey !== 'sab' && dayKey !== 'dom',
+        start: '08:00',
+        end: '18:00',
+        lunchStart: '12:00',
+        lunchEnd: '13:00',
+      };
+
+      const row = document.createElement('div');
+      row.className = 'p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3';
+      row.innerHTML = `
+        <div class="flex items-center space-x-3 min-w-[140px]">
+          <label class="flex items-center space-x-2 cursor-pointer">
+            <input type="checkbox" id="sched-${dayKey}-enabled" ${dayData.enabled ? 'checked' : ''} class="rounded bg-slate-900 border-slate-700 text-blue-500" />
+            <span class="font-bold text-slate-200 text-xs">${DAY_LABELS[dayKey]}</span>
+          </label>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 flex-1">
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-0.5">Entrada</label>
+            <input type="time" id="sched-${dayKey}-start" value="${dayData.start || '08:00'}" class="w-full px-2 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-200 text-xs font-mono" />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-0.5">Almoço Início</label>
+            <input type="time" id="sched-${dayKey}-lunchStart" value="${dayData.lunchStart || '12:00'}" class="w-full px-2 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-200 text-xs font-mono" />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-0.5">Almoço Fim</label>
+            <input type="time" id="sched-${dayKey}-lunchEnd" value="${dayData.lunchEnd || '13:00'}" class="w-full px-2 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-200 text-xs font-mono" />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-0.5">Saída</label>
+            <input type="time" id="sched-${dayKey}-end" value="${dayData.end || '18:00'}" class="w-full px-2 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-200 text-xs font-mono" />
+          </div>
+        </div>
+      `;
+      container.appendChild(row);
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    console.error('Erro ao carregar agenda semanal:', err);
+  }
+}
+
+async function saveWeeklySchedule(e) {
+  if (e) e.preventDefault();
+  const autoStart = document.getElementById('schedAutoStart')?.checked || false;
+  const autoEnd = document.getElementById('schedAutoEnd')?.checked || false;
+
+  const days = {};
+  Object.keys(DAY_LABELS).forEach((dayKey) => {
+    days[dayKey] = {
+      enabled: document.getElementById(`sched-${dayKey}-enabled`)?.checked || false,
+      start: document.getElementById(`sched-${dayKey}-start`)?.value || '08:00',
+      end: document.getElementById(`sched-${dayKey}-end`)?.value || '18:00',
+      lunchStart: document.getElementById(`sched-${dayKey}-lunchStart`)?.value || '12:00',
+      lunchEnd: document.getElementById(`sched-${dayKey}-lunchEnd`)?.value || '13:00',
+    };
+  });
+
+  try {
+    const res = await fetch('/api/schedule/weekly', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        weeklySchedule: {
+          autoStartEnabled: autoStart,
+          autoEndEnabled: autoEnd,
+          days,
+        }
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert('✅ Agenda semanal salva com sucesso!');
+      loadWeeklySchedule();
+    }
+  } catch (err) {
+    alert(`Erro ao salvar agenda semanal: ${err.message}`);
+  }
+}
+
+// ----------------------------------------------------
+// BATERIA DE TESTES & AJUSTE DE TEMPO DE COMENTÁRIOS
+// ----------------------------------------------------
+async function loadCommentInterval() {
+  try {
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    const interval = cfg.commentInterval || { minMinutes: 20, maxMinutes: 25 };
+    setVal('testMinMinutes', interval.minMinutes || 20);
+    setVal('testMaxMinutes', interval.maxMinutes || 25);
+  } catch (err) {
+    console.error('Erro ao carregar intervalo de comentários:', err);
+  }
+}
+
+async function saveCommentInterval(e) {
+  if (e) e.preventDefault();
+  const min = parseFloat(document.getElementById('testMinMinutes')?.value) || 20;
+  const max = parseFloat(document.getElementById('testMaxMinutes')?.value) || 25;
+
+  const feedback = document.getElementById('intervalSaveFeedback');
+  if (feedback) feedback.innerText = 'Salvando e reagendando...';
+
+  try {
+    const res = await fetch('/api/test/comment-interval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        minMinutes: min,
+        maxMinutes: max,
+        testMode: min < 10,
+      }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (feedback) {
+        feedback.innerText = `✅ Intervalo configurado: ${min}m a ${max}m`;
+        setTimeout(() => (feedback.innerText = ''), 4000);
+      }
+      logTestOutput(`⏱️ Intervalo de comentários alterado para: ${min}m a ${max}m. Próximo sorteio reagendado!`, 'success');
+    }
+  } catch (err) {
+    if (feedback) feedback.innerText = `❌ Erro: ${err.message}`;
+    logTestOutput(`❌ Erro ao configurar intervalo: ${err.message}`, 'error');
+  }
+}
+
+function setCommentIntervalPreset(min, max) {
+  setVal('testMinMinutes', min);
+  setVal('testMaxMinutes', max);
+  saveCommentInterval();
+}
+
+function logTestOutput(msg, type = 'info') {
+  const consoleEl = document.getElementById('testConsole');
+  if (!consoleEl) return;
+
+  const colors = {
+    info: 'text-slate-300',
+    success: 'text-emerald-400',
+    warning: 'text-amber-400',
+    error: 'text-rose-400',
+  };
+
+  const line = document.createElement('div');
+  line.className = `${colors[type] || 'text-slate-300'} flex space-x-1.5`;
+  const time = new Date().toLocaleTimeString('pt-BR');
+  line.innerHTML = `<span class="text-slate-500">[${time}]</span> <span>${msg}</span>`;
+  consoleEl.appendChild(line);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function clearTestConsole() {
+  const consoleEl = document.getElementById('testConsole');
+  if (consoleEl) {
+    consoleEl.innerHTML = '<div class="text-slate-500">Console limpo.</div>';
+  }
+}
+
+async function testTriggerQuestion() {
+  logTestOutput('🔔 Disparando pergunta interativa no Telegram...', 'info');
+  try {
+    const res = await fetch('/api/test/trigger-question', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      logTestOutput('✅ Pergunta enviada para o Telegram! Responda no chat em até 2 minutos para ver o comentário entrar no Trello.', 'success');
+    } else {
+      logTestOutput(`❌ Falha ao disparar pergunta: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    logTestOutput(`❌ Erro de rede: ${err.message}`, 'error');
+  }
+}
+
+async function testDirectComment() {
+  const text = prompt('Digite o texto para o comentário de teste no Trello:', 'Teste de comentário instantâneo via Guardião Nobe.');
+  if (!text) return;
+
+  logTestOutput(`💬 Enviando comentário de teste: "${text}"...`, 'info');
+  try {
+    const res = await fetch('/api/control/comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      logTestOutput(`✅ Comentário postado no Trello com sucesso!`, 'success');
+    } else {
+      logTestOutput(`❌ Falha ao postar comentário: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    logTestOutput(`❌ Erro: ${err.message}`, 'error');
+  }
+}
+
+async function testTelegramPing() {
+  logTestOutput('📡 Testando conexão e ping com o Telegram Bot API...', 'info');
+  try {
+    const res = await fetch('/api/test/ping-telegram', { method: 'POST' });
+    const data = await res.json();
+    if (data.success && data.sent) {
+      logTestOutput('✅ Mensagem de teste recebida com sucesso no @guardiao_luis_bot!', 'success');
+    } else {
+      logTestOutput(`❌ Falha ao enviar mensagem no Telegram. Verifique o botToken e chatId.`, 'error');
+    }
+  } catch (err) {
+    logTestOutput(`❌ Erro ao conectar com Telegram: ${err.message}`, 'error');
+  }
+}
+
+async function testTrelloPing() {
+  logTestOutput('📋 Testando conexão e auditando listas no Trello...', 'info');
+  try {
+    const res = await fetch('/api/test/ping-trello', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      logTestOutput(`✅ Conexão OK! Encontradas ${data.listsCount} listas no quadro.`, 'success');
+      data.lists.forEach(l => {
+        logTestOutput(`   • Lista: "${l.name}" (ID: ${l.id})`, 'info');
+      });
+    } else {
+      logTestOutput(`❌ Falha na API do Trello: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    logTestOutput(`❌ Erro de conexão com Trello: ${err.message}`, 'error');
+  }
+}
+
 // Exposição Global no Window
 window.switchTab = switchTab;
 window.controlAction = controlAction;
@@ -778,4 +1168,19 @@ window.removeTemplateItem = removeTemplateItem;
 window.saveSettings = saveSettings;
 window.testTrello = testTrello;
 window.exportLogs = exportLogs;
+window.clearAllLogs = clearAllLogs;
 window.loadLogs = loadLogs;
+window.loadDbSessions = loadDbSessions;
+window.loadDbActivities = loadDbActivities;
+window.loadDbErrors = loadDbErrors;
+window.loadWeeklySchedule = loadWeeklySchedule;
+window.saveWeeklySchedule = saveWeeklySchedule;
+window.loadCommentInterval = loadCommentInterval;
+window.saveCommentInterval = saveCommentInterval;
+window.setCommentIntervalPreset = setCommentIntervalPreset;
+window.testTriggerQuestion = testTriggerQuestion;
+window.testDirectComment = testDirectComment;
+window.testTelegramPing = testTelegramPing;
+window.testTrelloPing = testTrelloPing;
+window.clearTestConsole = clearTestConsole;
+

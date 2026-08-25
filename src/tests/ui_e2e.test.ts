@@ -67,11 +67,23 @@ test('E2E UI & Graphical Interface: Bateria Completa com Navegador Real', async 
     // 4. Navegação pelas Abas Desktop
     console.log('[E2E UI] 📑 2. Testando navegação por abas...');
     
-    // Aba: Agenda do Dia
+    // Aba: Agenda Semanal (Horários)
+    await page.evaluate("switchTab('schedule')");
+    await page.waitForTimeout(500);
+    assert.strictEqual(await page.locator('#tab-schedule').evaluate((el) => !el.classList.contains('hidden')), true);
+    console.log('[E2E UI] ✅ Aba Agenda Semanal aberta com sucesso');
+
+    // Aba: Bateria de Testes & Jitter
+    await page.evaluate("switchTab('test')");
+    await page.waitForTimeout(500);
+    assert.strictEqual(await page.locator('#tab-test').evaluate((el) => !el.classList.contains('hidden')), true);
+    console.log('[E2E UI] ✅ Aba Testes & Jitter aberta com sucesso');
+
+    // Aba: Agenda de Tarefas do Dia
     await page.evaluate("switchTab('agenda')");
     await page.waitForTimeout(500);
     assert.strictEqual(await page.locator('#tab-agenda').evaluate((el) => !el.classList.contains('hidden')), true);
-    console.log('[E2E UI] ✅ Aba Agenda do Dia aberta com sucesso');
+    console.log('[E2E UI] ✅ Aba Tarefas do Dia aberta com sucesso');
 
     // Aba: Comentários Fallback
     await page.evaluate("switchTab('templates')");

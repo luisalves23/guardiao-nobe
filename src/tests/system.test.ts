@@ -25,10 +25,10 @@ test('2. Jitter: Rotação de 4h rigorosamente entre 230 e 238 minutos (3h50 a 3
 });
 
 test('3. Data: Formatação no padrão estrito DD/MM/AAAA', () => {
-  const d = new Date(2026, 7, 24); // 24 de Agosto de 2026
+  const d = new Date('2026-08-24T15:00:00Z'); // 12:00 no fuso de Brasília
   assert.strictEqual(formatTodayDate(d), '24/08/2026');
   
-  const dJan = new Date(2026, 0, 5); // 05 de Janeiro de 2026
+  const dJan = new Date('2026-01-05T15:00:00Z'); // 12:00 no fuso de Brasília
   assert.strictEqual(formatTodayDate(dJan), '05/01/2026');
 });
 

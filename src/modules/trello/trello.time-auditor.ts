@@ -41,6 +41,66 @@ export class TrelloTimeAuditor {
   }
 
   /**
+   * Processa uma lista de actions em memória e calcula os segundos trabalhados
+   */
+  public calculateCardWorkingSecondsFromActions(
+    actionsList: any[],
+    workingListId: string,
+    options?: { since?: number; until?: number }
+  ): number {
+    const now = Date.now();
+    const since = options?.since || 0;
+    const until = options?.until || now;
+    const actions = [...actionsList];
+
+    let currentListId: string | null = null;
+    let isClosed = false;
+    let lastWorkingEnteredTime: number | null = null;
+    let accumulatedSeconds = 0;
+
+    for (const a of actions) {
+      const t = new Date(a.date).getTime();
+      const wasWorking = currentListId === workingListId && !isClosed;
+
+      if (a.type === 'createCard') {
+        currentListId = a.data?.list?.id || null;
+        isClosed = false;
+      }
+      if (a.data?.listAfter?.id) {
+        currentListId = a.data.listAfter.id;
+      }
+      if (a.data?.card && typeof a.data.card.closed === 'boolean') {
+        isClosed = a.data.card.closed;
+      }
+
+      const isWorking = currentListId === workingListId && !isClosed;
+
+      if (wasWorking && !isWorking) {
+        if (lastWorkingEnteredTime !== null) {
+          const startWindow = Math.max(lastWorkingEnteredTime, since);
+          const endWindow = Math.min(t, until);
+          if (endWindow > startWindow) {
+            accumulatedSeconds += (endWindow - startWindow) / 1000;
+          }
+          lastWorkingEnteredTime = null;
+        }
+      } else if (!wasWorking && isWorking) {
+        lastWorkingEnteredTime = t;
+      }
+    }
+
+    if (currentListId === workingListId && !isClosed && lastWorkingEnteredTime !== null) {
+      const startWindow = Math.max(lastWorkingEnteredTime, since);
+      const endWindow = Math.min(now, until);
+      if (endWindow > startWindow) {
+        accumulatedSeconds += (endWindow - startWindow) / 1000;
+      }
+    }
+
+    return Math.floor(accumulatedSeconds);
+  }
+
+  /**
    * Calcula milimetricamente o tempo que um card passou na coluna 'Trabalhando Agora'
    * com base nas Actions oficiais da API do Trello.
    */
@@ -149,12 +209,13 @@ export class TrelloTimeAuditor {
 
   /**
    * Calcula o tempo trabalhado HOJE em todo o quadro no Trello
-   * Replay preciso de todas as movimentações ocorridas a partir de 00:00:00 de hoje.
+   * Replay preciso de todas as movimentações ocorridas a partir do início real do expediente de hoje.
    */
   public async calculateTodayBoardWorkingSeconds(
     boardId: string,
     workingListId: string,
-    hourlyRate = 18.0
+    hourlyRate = 18.0,
+    userName = 'Luis Alves'
   ): Promise<DayWorkSummary> {
     const now = Date.now();
     if (this.cachedDaySummary && now - this.cachedDaySummary.timestamp < this.CACHE_TTL_MS) {
@@ -165,6 +226,9 @@ export class TrelloTimeAuditor {
     const nowDate = new Date();
     const startOfDay = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate(), 0, 0, 0, 0).getTime();
     const endOfDay = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate(), 23, 59, 59, 999).getTime();
+
+    // Formatações aceitas para nome de card do usuário: "Luis Alves" ou "Luís Alves"
+    const normalizedUser = userName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
     try {
       const res = await client.getHttp().get(`/boards/${boardId}/actions`, {
@@ -181,6 +245,7 @@ export class TrelloTimeAuditor {
         {
           id: string;
           name: string;
+          createdAt: number;
           currentListId: string | null;
           isClosed: boolean;
           lastWorkingEnteredTime: number | null;
@@ -193,10 +258,14 @@ export class TrelloTimeAuditor {
         const cardId = a.data?.card?.id;
         if (!cardId) continue;
 
+        const cardName = a.data?.card?.name || '';
+        const t = new Date(a.date).getTime();
+
         if (!cardsMap.has(cardId)) {
           cardsMap.set(cardId, {
             id: cardId,
-            name: a.data.card.name || 'Sem título',
+            name: cardName || 'Sem título',
+            createdAt: t,
             currentListId: null,
             isClosed: false,
             lastWorkingEnteredTime: null,
@@ -206,14 +275,14 @@ export class TrelloTimeAuditor {
         }
 
         const card = cardsMap.get(cardId)!;
-        if (a.data.card.name) card.name = a.data.card.name;
-        const t = new Date(a.date).getTime();
+        if (cardName) card.name = cardName;
 
         const wasWorking = card.currentListId === workingListId && !card.isClosed;
 
         if (a.type === 'createCard') {
           card.currentListId = a.data.list?.id || null;
           card.isClosed = false;
+          card.createdAt = t;
         }
         if (a.data.listAfter?.id) {
           card.currentListId = a.data.listAfter.id;
@@ -226,13 +295,14 @@ export class TrelloTimeAuditor {
 
         if (wasWorking && !isWorking) {
           if (card.lastWorkingEnteredTime !== null) {
-            const startWindow = Math.max(card.lastWorkingEnteredTime, startOfDay);
+            // O início nunca pode ser antes da criação do próprio card ou de 00:00 de hoje
+            const effectiveStart = Math.max(card.lastWorkingEnteredTime, card.createdAt, startOfDay);
             const endWindow = Math.min(t, endOfDay);
-            if (endWindow > startWindow) {
-              const diffSec = (endWindow - startWindow) / 1000;
+            if (endWindow > effectiveStart) {
+              const diffSec = (endWindow - effectiveStart) / 1000;
               card.accumulatedSecondsToday += diffSec;
               card.intervals.push({
-                start: new Date(startWindow).toISOString(),
+                start: new Date(effectiveStart).toISOString(),
                 end: new Date(endWindow).toISOString(),
                 seconds: diffSec,
               });
@@ -249,14 +319,22 @@ export class TrelloTimeAuditor {
       const cardsList: CardWorkSummary[] = [];
 
       for (const card of cardsMap.values()) {
+        // Filtra apenas cards pertencentes ao usuário (ex: Luis Alves)
+        const normalizedCardName = card.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const isUserCard = normalizedCardName.includes(normalizedUser) || normalizedCardName.includes('trabalho do dia');
+
+        if (!isUserCard) {
+          continue;
+        }
+
         if (card.currentListId === workingListId && !card.isClosed && card.lastWorkingEnteredTime !== null) {
-          const startWindow = Math.max(card.lastWorkingEnteredTime, startOfDay);
+          const effectiveStart = Math.max(card.lastWorkingEnteredTime, card.createdAt, startOfDay);
           const endWindow = Math.min(now, endOfDay);
-          if (endWindow > startWindow) {
-            const diffSec = (endWindow - startWindow) / 1000;
+          if (endWindow > effectiveStart) {
+            const diffSec = (endWindow - effectiveStart) / 1000;
             card.accumulatedSecondsToday += diffSec;
             card.intervals.push({
-              start: new Date(startWindow).toISOString(),
+              start: new Date(effectiveStart).toISOString(),
               end: 'NOW',
               seconds: diffSec,
             });

@@ -1,9 +1,13 @@
 import { StorageService } from '../../services/storage.service.js';
 
 export function getCommentJitterMs(): number {
-  // Entre 20 e 25 minutos
-  const minMs = 20 * 60 * 1000;
-  const maxMs = 25 * 60 * 1000;
+  const config = StorageService.getInstance().getConfig();
+  const cfg = config.commentInterval;
+  const minMinutes = cfg?.minMinutes && cfg.minMinutes > 0 ? cfg.minMinutes : 20;
+  const maxMinutes = cfg?.maxMinutes && cfg.maxMinutes >= minMinutes ? cfg.maxMinutes : 25;
+
+  const minMs = minMinutes * 60 * 1000;
+  const maxMs = maxMinutes * 60 * 1000;
   return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
 }
 
@@ -25,10 +29,28 @@ export function getRotationJitterMs(): number {
 }
 
 export function formatTodayDate(d = new Date()): string {
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-  return `${day}/${month}/${year}`;
+  const formatter = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  return formatter.format(d);
+}
+
+export function getBrasiliaHoursMinutes(d = new Date()): { hours: number; minutes: number; dayOfWeek: number } {
+  const formatter = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(d);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value || 0);
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value || 0);
+  // 0 = Dom, 1 = Seg, ..., 6 = Sab
+  const dayOfWeek = d.getDay();
+  return { hours: hour, minutes: minute, dayOfWeek };
 }
 
 export function formatHMS(totalSeconds: number): string {
@@ -39,3 +61,17 @@ export function formatHMS(totalSeconds: number): string {
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${pad(hours)}h${pad(minutes)}min${pad(seconds)}seg`;
 }
+
+export function formatDuration(ms: number): string {
+  if (ms <= 0) return '00:00';
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+

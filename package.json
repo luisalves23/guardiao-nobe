@@ -8,7 +8,7 @@
     "dev": "node --loader tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "node --test dist/tests/time_auditor.test.js dist/tests/system.test.js",
+    "test": "node --test dist/tests/startup_reconnection_and_card_types.test.js dist/tests/comprehensive_60_tests.test.js dist/tests/active_card_tracker.test.js dist/tests/database.test.js dist/tests/time_auditor.test.js dist/tests/system.test.js",
     "test:ui": "node --test dist/tests/ui_e2e.test.js",
     "test:live": "node dist/tests/live_integration.js"
   },
