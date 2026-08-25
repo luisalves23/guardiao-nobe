@@ -122,36 +122,13 @@ export class AutoRescueWatcher {
             return;
           }
 
-          // Caso 2.3: Card movido para outra pasta (ex: Pasta do Mês) durante o expediente WORKING
+          // Caso 2.3: Card movido para outra pasta durante o expediente WORKING
           if (card.idList !== config.trello.workingListId) {
             const now = Date.now();
             const cardAgeMinutes = ctx.cardStartTime ? (now - ctx.cardStartTime) / (1000 * 60) : 0;
             const rotationLimitMinutes = config.rotationLimitMinutes || 230;
 
-            if (cardAgeMinutes >= rotationLimitMinutes) {
-              console.log('[AutoRescueWatcher] Card completou tempo de rotação. Criando novo card em Trabalhando Agora...');
-              const dateFormatted = formatTodayDate(new Date());
-              const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
-
-              const newCard = await trelloCards.createCard(
-                config.trello.workingListId,
-                cardTitle,
-                config.trello.memberId
-              );
-
-              ctx.onCardRotated(newCard.id, cardTitle);
-
-              storage.addLog({
-                type: 'CARD_ROTATED',
-                message: `Card anterior completou limite de tempo. Novo card "${cardTitle}" aberto.`,
-                source: 'SYSTEM',
-                details: { newCardId: newCard.id, cardTitle },
-              });
-
-              await dispatcher.broadcastAlert(
-                `🔄 - [ROTAÇÃO DE CARD] - Card anterior arquivado. Novo card (*${cardTitle}*) aberto em "Trabalhando Agora"!`
-              );
-            } else {
+            if (cardAgeMinutes < rotationLimitMinutes) {
               console.log('[AutoRescueWatcher] Card com tempo restante. Restaurando para Trabalhando Agora sem spam...');
               await trelloCards.moveCard(ctx.activeCardId, config.trello.workingListId);
 
@@ -163,16 +140,8 @@ export class AutoRescueWatcher {
             }
             return;
           }
-        } catch {
-          // Se o getCard falhou (ex: card deletado permanentemente)
-          const dateFormatted = formatTodayDate(new Date());
-          const cardTitle = `Trabalho do Dia - ${dateFormatted} - ${config.trello.userName || 'Luís Alves'}`;
-          const newCard = await trelloCards.createCard(
-            config.trello.workingListId,
-            cardTitle,
-            config.trello.memberId
-          );
-          ctx.onCardRotated(newCard.id, cardTitle);
+        } catch (err: any) {
+          console.warn('[AutoRescueWatcher] Aviso ao verificar card ativo:', err.message);
         }
       }
     } catch (err: any) {

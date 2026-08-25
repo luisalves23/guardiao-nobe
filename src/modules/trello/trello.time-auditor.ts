@@ -1,4 +1,6 @@
 import { TrelloClient } from './trello.client.js';
+import { TrelloListsManager } from './trello.lists.js';
+import { TrelloCardsManager } from './trello.cards.js';
 
 export interface CardWorkSummary {
   cardId: string;
@@ -205,6 +207,71 @@ export class TrelloTimeAuditor {
         intervals: [],
       };
     }
+  }
+
+  /**
+   * Calcula o tempo trabalhado HOJE consolidando cards da lista do mês + lista de trabalho
+   */
+  public async calculateDailyWorkingTimeFromCards(
+    boardId: string,
+    workingListId: string,
+    hourlyRate = 18.0,
+    userName = 'Luis Alves'
+  ): Promise<DayWorkSummary> {
+    const listsManager = TrelloListsManager.getInstance();
+    const cardsManager = TrelloCardsManager.getInstance();
+    const d = new Date();
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const today = `${day}/${month}/${year}`;
+    const normalizedUser = userName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    try {
+      const monthlyList = await listsManager.findOrCreateMonthlyList(boardId, userName);
+      const [monthlyCards, workingCards] = await Promise.all([
+        cardsManager.getCardsInList(monthlyList.id).catch(() => []),
+        cardsManager.getCardsInList(workingListId).catch(() => []),
+      ]);
+
+      const allRelevantCards = [...monthlyCards, ...workingCards];
+      let totalSeconds = 0;
+      const cardsList: CardWorkSummary[] = [];
+      const seenCardIds = new Set<string>();
+
+      for (const card of allRelevantCards) {
+        if (!card.name || seenCardIds.has(card.id)) continue;
+        seenCardIds.add(card.id);
+
+        const normalizedCardName = card.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const isUserCard = normalizedCardName.includes(normalizedUser) || normalizedCardName.includes('trabalho do dia');
+        const isTodayCard = card.name.includes(today);
+
+        if (!isUserCard || !isTodayCard) continue;
+
+        // Audita tempo do card
+        const cardSummary = await this.calculateCardWorkingSeconds(card.id, workingListId);
+        if (cardSummary.seconds > 0) {
+          totalSeconds += cardSummary.seconds;
+          cardsList.push(cardSummary);
+        }
+      }
+
+      if (totalSeconds > 0) {
+        const totalEarnings = Math.round((totalSeconds / 3600) * hourlyRate * 100) / 100;
+        return {
+          totalSeconds,
+          formattedTime: TrelloTimeAuditor.formatSecondsToHMS(totalSeconds),
+          totalEarnings,
+          cards: cardsList,
+        };
+      }
+    } catch (err: any) {
+      console.warn('[TrelloTimeAuditor] Erro na consulta de cards do mês:', err.message);
+    }
+
+    // Fallback para calculateTodayBoardWorkingSeconds
+    return await this.calculateTodayBoardWorkingSeconds(boardId, workingListId, hourlyRate, userName);
   }
 
   /**

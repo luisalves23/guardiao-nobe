@@ -95,15 +95,17 @@ export class ShiftOrchestrator {
 
     try {
       const auditor = TrelloTimeAuditor.getInstance();
-      const daySummary = await auditor.calculateTodayBoardWorkingSeconds(
+      const daySummary = await auditor.calculateDailyWorkingTimeFromCards(
         config.trello.boardId,
         config.trello.workingListId,
         config.hourlyRate || 18.0,
         config.trello.userName || 'Luis Alves'
       );
 
-      this.todayWorkedSeconds = daySummary.totalSeconds;
-      this.todayWorkedMinutes = daySummary.totalSeconds / 60;
+      if (daySummary.totalSeconds > 0) {
+        this.todayWorkedSeconds = Math.max(this.todayWorkedSeconds, daySummary.totalSeconds);
+        this.todayWorkedMinutes = this.todayWorkedSeconds / 60;
+      }
 
       // Sincroniza o rastreador global do card ativo
       const cardTracker = ActiveCardTracker.getInstance();
@@ -142,7 +144,7 @@ export class ShiftOrchestrator {
     const db = DatabaseService.getInstance();
 
     const dbWorkedSeconds = db.getTodayWorkedSeconds();
-    const activeWorkedSeconds = dbWorkedSeconds > 0 ? dbWorkedSeconds : this.todayWorkedSeconds;
+    const activeWorkedSeconds = Math.max(dbWorkedSeconds, this.todayWorkedSeconds);
 
     const dispatcher = MessageDispatcher.getInstance();
     return {
