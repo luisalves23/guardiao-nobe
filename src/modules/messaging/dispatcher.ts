@@ -24,8 +24,8 @@ export class MessageDispatcher {
 
     if (telegram.isConfigured()) {
       return await telegram.askActivityQuestion(timeoutMs, onTimeout);
-    } else {
-      return await whatsapp.askActivityQuestion(timeoutMs, onTimeout);
     }
+
+    return await whatsapp.askActivityQuestion(timeoutMs, onTimeout);
   }
 }

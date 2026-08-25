@@ -34,7 +34,11 @@ export class TelegramAdapter {
   }
 
   public isConfigured(): boolean {
-    return !!this.getBotToken();
+    return Boolean(this.getBotToken() && this.getChatId());
+  }
+
+  public hasBotToken(): boolean {
+    return Boolean(this.getBotToken());
   }
 
   public async initialize(): Promise<void> {
@@ -306,7 +310,6 @@ export class TelegramAdapter {
   ): Promise<string | null> {
     const chatId = this.getChatId();
     if (!chatId || !this.getBotToken()) {
-      if (onTimeout) onTimeout();
       return null;
     }
 
