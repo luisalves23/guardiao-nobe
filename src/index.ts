@@ -4,6 +4,7 @@ dotenv.config();
 import { createServer } from './api/server.js';
 import { Engine } from './core/engine.js';
 import { WhatsAppService } from './services/whatsapp.service.js';
+import { TelegramAdapter } from './modules/messaging/index.js';
 import { StorageService } from './services/storage.service.js';
 
 async function bootstrap() {
@@ -14,7 +15,8 @@ async function bootstrap() {
   // 1. Inicializa persistência
   StorageService.getInstance();
 
-  // 2. Inicializa serviços
+  // 2. Inicializa serviços e mensageria
+  await TelegramAdapter.getInstance().initialize();
   await WhatsAppService.getInstance().initialize();
   await Engine.getInstance().initialize();
 

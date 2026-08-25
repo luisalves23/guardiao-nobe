@@ -37,6 +37,8 @@ export class Engine {
     whatsapp.setCommandHandler(commandHandler);
     telegram.setCommandHandler(commandHandler);
 
+    await telegram.initialize();
+
     // Executa descoberta e reconexão automática de card de trabalho existente no Trello
     try {
       await ShiftOrchestrator.getInstance().autoDiscoverActiveCardOnStartup();

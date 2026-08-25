@@ -491,6 +491,18 @@ export class ShiftOrchestrator {
       DatabaseService.getInstance().startWorkSession(this.activeCardId, this.activeCardName, 'WORKING');
       DatabaseService.getInstance().logActivity('CONTROL', 'SHIFT_STARTED', `Expediente iniciado no card "${this.activeCardName}".`);
 
+      // Comentário customizado de Início de Expediente
+      const isStartCommentEnabled = config.actionMessages?.start?.enabled !== false;
+      const startCommentText = config.actionMessages?.start?.text?.trim();
+      if (isStartCommentEnabled && startCommentText && this.activeCardId) {
+        try {
+          await trelloCards.addComment(this.activeCardId, startCommentText);
+          this.lastCommentTime = Date.now();
+        } catch (cErr: any) {
+          console.warn('[ShiftOrchestrator] Falha ao postar comentário de início:', cErr.message);
+        }
+      }
+
       await this.scheduleNextJitters();
       this.saveCurrentState();
 
@@ -579,6 +591,17 @@ export class ShiftOrchestrator {
 
     if (config.trello.boardId && config.trello.workingListId) {
       try {
+        // Comentário customizado de Pausa
+        const isPauseCommentEnabled = config.actionMessages?.pause?.enabled === true;
+        const pauseCommentText = config.actionMessages?.pause?.text?.trim();
+        if (isPauseCommentEnabled && pauseCommentText && this.activeCardId) {
+          try {
+            await trelloCards.addComment(this.activeCardId, pauseCommentText);
+          } catch (cErr: any) {
+            console.warn('[ShiftOrchestrator] Falha ao postar comentário de pausa:', cErr.message);
+          }
+        }
+
         const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
         const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
 
@@ -686,6 +709,19 @@ export class ShiftOrchestrator {
     await this.scheduleNextJitters();
     DatabaseService.getInstance().startWorkSession(this.activeCardId, this.activeCardName, 'WORKING');
     DatabaseService.getInstance().logActivity('CONTROL', 'SHIFT_RESUMED', `Expediente retomado no card "${this.activeCardName}".`);
+
+    // Comentário customizado de Retomada de Expediente
+    const isResumeCommentEnabled = config.actionMessages?.resume?.enabled !== false;
+    const resumeCommentText = config.actionMessages?.resume?.text?.trim();
+    if (isResumeCommentEnabled && resumeCommentText && this.activeCardId) {
+      try {
+        await trelloCards.addComment(this.activeCardId, resumeCommentText);
+        this.lastCommentTime = Date.now();
+      } catch (cErr: any) {
+        console.warn('[ShiftOrchestrator] Falha ao postar comentário de retomada:', cErr.message);
+      }
+    }
+
     this.saveCurrentState();
 
     await dispatcher.broadcastAlert(
@@ -727,6 +763,17 @@ export class ShiftOrchestrator {
 
     if (config.trello.boardId && config.trello.workingListId) {
       try {
+        // Comentário customizado de Almoço
+        const isLunchCommentEnabled = config.actionMessages?.lunch?.enabled !== false;
+        const lunchCommentText = config.actionMessages?.lunch?.text?.trim();
+        if (isLunchCommentEnabled && lunchCommentText && this.activeCardId) {
+          try {
+            await trelloCards.addComment(this.activeCardId, lunchCommentText);
+          } catch (cErr: any) {
+            console.warn('[ShiftOrchestrator] Falha ao postar comentário de almoço:', cErr.message);
+          }
+        }
+
         const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);
         const cardsInWorking = await trelloCards.getCardsInList(config.trello.workingListId);
 
@@ -771,6 +818,17 @@ export class ShiftOrchestrator {
 
     if (config.trello.boardId && config.trello.workingListId) {
       try {
+        // Comentário customizado de Encerramento
+        const isEndCommentEnabled = config.actionMessages?.end?.enabled === true;
+        const endCommentText = config.actionMessages?.end?.text?.trim();
+        if (isEndCommentEnabled && endCommentText && this.activeCardId) {
+          try {
+            await trelloCards.addComment(this.activeCardId, endCommentText);
+          } catch (cErr: any) {
+            console.warn('[ShiftOrchestrator] Falha ao postar comentário de encerramento:', cErr.message);
+          }
+        }
+
         let targetListId = config.trello.waitListId;
         try {
           const monthlyList = await trelloLists.findOrCreateMonthlyList(config.trello.boardId, config.trello.userName);

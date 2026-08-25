@@ -10,7 +10,7 @@ import { DatabaseService } from '../services/database.service.js';
 import { TrelloService } from '../services/trello.service.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { TelegramService } from '../services/telegram.service.js';
-import { MessageDispatcher } from '../modules/messaging/index.js';
+import { MessageDispatcher, TelegramAdapter } from '../modules/messaging/index.js';
 import { TrelloListsManager } from '../modules/trello/index.js';
 
 export function createServer() {
@@ -66,8 +66,8 @@ export function createServer() {
 
   app.post('/api/config', async (req: Request, res: Response) => {
     const updated = StorageService.getInstance().saveConfig(req.body);
-    if (req.body.telegram?.botToken) {
-      await TelegramService.getInstance().initialize();
+    if (req.body.telegram?.botToken || updated.telegram?.botToken) {
+      await TelegramAdapter.getInstance().initialize();
     }
     res.json({ success: true, config: updated });
   });
