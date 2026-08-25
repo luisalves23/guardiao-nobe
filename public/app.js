@@ -534,101 +534,26 @@ async function promptQuickComment() {
   }
 }
 
-// Carregar Logs de Auditoria (30 Dias)
 // ----------------------------------------------------
-// BANCO DE DADOS: SESSÕES DE TRABALHO (SQLITE)
+// BANCO DE DADOS & AUDITORIA UNIFICADA DO SISTEMA
 // ----------------------------------------------------
-async function loadDbSessions() {
-  const container = document.getElementById('dbSessionsContainer');
+async function loadUnifiedAuditLogs() {
+  const container = document.getElementById('unifiedAuditLogsContainer');
   if (!container) return;
 
-  try {
-    const res = await fetch('/api/db/sessions');
-    const data = await res.json();
-
-    if (!data.sessions || data.sessions.length === 0) {
-      container.innerHTML = '<div class="p-4 text-center text-xs text-slate-500">Nenhuma sessão de trabalho registrada hoje no banco de dados.</div>';
-      return;
-    }
-
-    const formatSec = (sec) => {
-      const s = Math.floor(sec);
-      const h = Math.floor(s / 3600);
-      const m = Math.floor((s % 3600) / 60);
-      const secs = s % 60;
-      return `${String(h).padStart(2, '0')}h${String(m).padStart(2, '0')}min${String(secs).padStart(2, '0')}seg`;
-    };
-
-    container.innerHTML = data.sessions
-      .map((s) => {
-        const startTime = new Date(s.start_time).toLocaleTimeString('pt-BR');
-        const endTime = s.end_time ? new Date(s.end_time).toLocaleTimeString('pt-BR') : '🟢 EM ANDAMENTO';
-        const durationStr = formatSec(s.duration_seconds || (Date.now() - s.start_time) / 1000);
-
-        let stateBadge = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
-        let stateText = 'TRABALHANDO';
-
-        if (s.state === 'PAUSED') {
-          stateBadge = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
-          stateText = 'PAUSA';
-        } else if (s.state === 'LUNCH') {
-          stateBadge = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
-          stateText = 'ALMOÇO';
-        }
-
-        const reasonBadge = s.end_reason
-          ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800 font-mono">${s.end_reason}</span>`
-          : '';
-
-        return `
-          <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-            <div class="flex items-center space-x-2.5">
-              <span class="px-2 py-0.5 rounded-md border ${stateBadge} font-bold text-[10px] tracking-wide uppercase">
-                ${stateText}
-              </span>
-              <div class="font-mono text-slate-300">
-                <span>${startTime}</span>
-                <span class="text-slate-500 mx-1">➜</span>
-                <span class="${s.is_active ? 'text-emerald-400 font-bold' : 'text-slate-300'}">${endTime}</span>
-              </div>
-            </div>
-
-            <div class="flex items-center space-x-3 text-right self-end sm:self-auto">
-              ${reasonBadge}
-              <div class="font-mono font-bold text-emerald-400 text-xs">${durationStr}</div>
-            </div>
-          </div>
-        `;
-      })
-      .join('');
-
-    if (window.lucide) window.lucide.createIcons();
-  } catch (err) {
-    console.error('Erro ao carregar sessões:', err);
-  }
-}
-
-// ----------------------------------------------------
-// BANCO DE DADOS: ATIVIDADES AUDITÁVEIS
-// ----------------------------------------------------
-async function loadDbActivities() {
-  const container = document.getElementById('logsContainer');
-  if (!container) return;
-
-  const category = document.getElementById('activityCategoryFilter')?.value || '';
-  const isErrorOnly = category === 'ERROR';
+  const category = document.getElementById('unifiedLogCategoryFilter')?.value || 'ALL';
+  const search = document.getElementById('unifiedLogSearchInput')?.value || '';
 
   try {
-    let url = `/api/db/activities?limit=100`;
-    if (category && category !== 'ERROR') url += `&category=${category}`;
-    if (isErrorOnly) url += `&errorsOnly=true`;
+    let url = `/api/logs/unified?limit=300`;
+    if (category && category !== 'ALL') url += `&category=${encodeURIComponent(category)}`;
+    if (search && search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
 
     const res = await fetch(url);
-    const data = await res.json();
-    const list = data.activities || [];
+    const list = await res.json();
 
-    if (list.length === 0) {
-      container.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">Nenhuma atividade encontrada com o filtro selecionado.</div>';
+    if (!list || list.length === 0) {
+      container.innerHTML = '<div class="p-8 text-center text-xs text-slate-500">Nenhum evento registrado com os filtros selecionados.</div>';
       return;
     }
 
@@ -651,9 +576,17 @@ async function loadDbActivities() {
             badgeColor = 'bg-sky-950/80 text-sky-400 border-sky-800';
             icon = 'send';
             break;
+          case 'SCHEDULER':
+            badgeColor = 'bg-amber-950/80 text-amber-400 border-amber-800';
+            icon = 'clock';
+            break;
           case 'ERROR':
             badgeColor = 'bg-rose-950/80 text-rose-400 border-rose-800';
             icon = 'alert-triangle';
+            break;
+          default:
+            badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
+            icon = 'activity';
             break;
         }
 
@@ -670,7 +603,7 @@ async function loadDbActivities() {
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between text-xs">
                 <span class="font-semibold text-slate-200 flex items-center space-x-2">
-                  <span>${item.action}</span>
+                  <span>${item.type}</span>
                   <span class="text-[9px] uppercase px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">${item.category}</span>
                 </span>
                 <span class="text-slate-500 font-mono text-[10px]">${time}</span>
@@ -685,59 +618,24 @@ async function loadDbActivities() {
 
     if (window.lucide) window.lucide.createIcons();
   } catch (err) {
-    console.error('Erro ao carregar atividades do banco:', err);
-  }
-}
-
-// ----------------------------------------------------
-// BANCO DE DADOS: DIAGNÓSTICO DE ERROS
-// ----------------------------------------------------
-async function loadDbErrors() {
-  const container = document.getElementById('dbErrorsContainer');
-  if (!container) return;
-
-  try {
-    const res = await fetch('/api/db/errors?limit=50');
-    const data = await res.json();
-    const errors = data.errors || [];
-
-    if (errors.length === 0) {
-      container.innerHTML = '<div class="p-4 text-center text-xs text-emerald-400/80 font-medium">✅ Nenhum erro registrado no banco de dados. Sistema estável.</div>';
-      return;
-    }
-
-    container.innerHTML = errors
-      .map((err) => {
-        const time = new Date(err.timestamp).toLocaleString('pt-BR');
-        return `
-          <div class="p-3 rounded-xl bg-rose-950/20 border border-rose-800/40 space-y-1 text-xs">
-            <div class="flex items-center justify-between">
-              <span class="font-bold text-rose-400 flex items-center space-x-1.5">
-                <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
-                <span>[${err.module}] ${err.error_code || 'ERRO'}</span>
-              </span>
-              <span class="font-mono text-[10px] text-slate-500">${time}</span>
-            </div>
-            <p class="text-slate-200 font-medium">${err.error_message}</p>
-            ${err.context_json ? `<div class="text-[10px] font-mono text-slate-400 bg-slate-950/80 p-2 rounded border border-slate-800 overflow-x-auto whitespace-pre-wrap">${err.context_json}</div>` : ''}
-            ${err.stack_trace ? `<details class="text-[10px] text-slate-500 cursor-pointer pt-1"><summary>Ver Stack Trace</summary><pre class="mt-1 p-2 bg-slate-950 rounded border border-slate-800 text-rose-300 font-mono overflow-x-auto">${err.stack_trace}</pre></details>` : ''}
-          </div>
-        `;
-      })
-      .join('');
-
-    if (window.lucide) window.lucide.createIcons();
-  } catch (err) {
-    console.error('Erro ao carregar diagnóstico de erros:', err);
+    console.error('Erro ao carregar auditoria unificada:', err);
   }
 }
 
 async function loadLogs() {
-  await Promise.all([
-    loadDbSessions(),
-    loadDbActivities(),
-    loadDbErrors(),
-  ]);
+  await loadUnifiedAuditLogs();
+}
+
+async function loadDbSessions() {
+  await loadUnifiedAuditLogs();
+}
+
+async function loadDbActivities() {
+  await loadUnifiedAuditLogs();
+}
+
+async function loadDbErrors() {
+  await loadUnifiedAuditLogs();
 }
 
 // Carregar Agenda

@@ -219,6 +219,22 @@ export class StorageService {
     this.logs.unshift(log);
     this.pruneOldLogs();
     this.persistLogs();
+
+    let cat: 'CONTROL' | 'TRELLO' | 'TELEGRAM' | 'SCHEDULER' | 'SYSTEM' | 'ERROR' = 'SYSTEM';
+    const srcStr = String(entry.source || '');
+    if (srcStr === 'TELEGRAM') cat = 'TELEGRAM';
+    else if (entry.type.includes('CARD') || entry.type.includes('COMMENT') || srcStr === 'TRELLO') cat = 'TRELLO';
+    else if (entry.type === 'ERROR') cat = 'ERROR';
+    else if (entry.type.includes('SHIFT') || entry.type.includes('PAUSE') || entry.type.includes('LUNCH') || entry.type.includes('RESUMED')) cat = 'CONTROL';
+
+    DatabaseService.getInstance().logActivity(
+      cat,
+      entry.type,
+      entry.message,
+      entry.details ? JSON.stringify(entry.details) : null,
+      entry.type === 'ERROR'
+    );
+
     return log;
   }
 
@@ -233,7 +249,7 @@ export class StorageService {
   public clearLogs(): void {
     this.logs = [];
     this.persistLogs();
-    DatabaseService.getInstance().clearActivities();
+    DatabaseService.getInstance().clearAllLogs();
   }
 
   private pruneOldLogs() {

@@ -64,14 +64,22 @@ test('E2E UI & Graphical Interface: Bateria Completa com Navegador Real', async 
     const topEarnings = await page.locator('#topEarnings').innerText();
     assert.match(topEarnings, /^R\$\s*\d+,\d{2}$/);
 
-    // Validação da versão v2.7.2 no cabeçalho
-    const versionBadge = await page.locator('text=v2.7.2').first();
-    assert.ok(await versionBadge.isVisible(), 'Badge de versão v2.7.2 deve estar visível no topo');
-    console.log('[E2E UI] ✅ Badge de versão v2.7.2 identificado com sucesso no cabeçalho');
+    // Validação da versão v2.7.3 no cabeçalho
+    const versionBadge = await page.locator('text=v2.7.3').first();
+    assert.ok(await versionBadge.isVisible(), 'Badge de versão v2.7.3 deve estar visível no topo');
+    console.log('[E2E UI] ✅ Badge de versão v2.7.3 identificado com sucesso no cabeçalho');
 
     // Teste de Submissão de Comentário pelo Painel Web
     console.log('[E2E UI] 💬 Testando envio de comentário pelo Painel Web...');
-    await page.evaluate("document.getElementById('commentInteractiveBox')?.classList.remove('hidden')");
+    await page.evaluate(`
+      window.liveStatus = window.liveStatus || {};
+      window.liveStatus.isQuestionPending = true;
+      window.liveStatus.activeQuestionDeadline = Date.now() + 120000;
+      const box = document.getElementById('commentInteractiveBox');
+      const normal = document.getElementById('commentNormalView');
+      if (box) box.classList.remove('hidden');
+      if (normal) normal.classList.add('hidden');
+    `);
     const webInput = page.locator('#webCommentInput');
     await webInput.fill('Desenvolvendo testes E2E do Guardião Nobe');
     const btnSendWeb = page.locator('#btnSendWebComment');

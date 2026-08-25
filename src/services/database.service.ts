@@ -335,6 +335,77 @@ export class DatabaseService {
     return this.data.errors_log.slice().reverse().slice(0, limit);
   }
 
+  public getUnifiedLogs(limit = 300, category?: string, search?: string): any[] {
+    const unified: Array<{
+      id: string;
+      timestamp: number;
+      timeFormatted: string;
+      category: string;
+      type: string;
+      title: string;
+      details: string | null;
+      isError: boolean;
+      source: string;
+    }> = [];
+
+    // 1. Atividades do banco
+    for (const a of this.data.activities) {
+      unified.push({
+        id: `act-${a.id}`,
+        timestamp: a.timestamp,
+        timeFormatted: new Date(a.timestamp).toLocaleTimeString('pt-BR'),
+        category: a.category,
+        type: a.action,
+        title: a.title,
+        details: a.details,
+        isError: a.is_error === 1,
+        source: a.category,
+      });
+    }
+
+    // 2. Sessões de trabalho
+    for (const s of this.data.work_sessions) {
+      const durMin = Math.round((s.duration_seconds || 0) / 60);
+      unified.push({
+        id: `sess-${s.id}`,
+        timestamp: s.start_time,
+        timeFormatted: new Date(s.start_time).toLocaleTimeString('pt-BR'),
+        category: 'CONTROL',
+        type: `SESSION_${s.state}`,
+        title: `Sessão [${s.state}] no card "${s.card_name || 'Sem título'}" (${durMin} min)`,
+        details: s.end_reason ? `Finalizada: ${s.end_reason}` : 'Sessão ativa em andamento',
+        isError: false,
+        source: 'SESSÃO',
+      });
+    }
+
+    // 3. Ordenação cronológica decrescente (mais recente no topo)
+    unified.sort((a, b) => b.timestamp - a.timestamp);
+
+    let filtered = unified;
+    if (category && category !== 'ALL') {
+      filtered = filtered.filter((item) => item.category.toUpperCase() === category.toUpperCase());
+    }
+    if (search && search.trim()) {
+      const q = search.toLowerCase().trim();
+      filtered = filtered.filter((item) =>
+        item.title.toLowerCase().includes(q) ||
+        (item.details && item.details.toLowerCase().includes(q)) ||
+        item.type.toLowerCase().includes(q) ||
+        item.source.toLowerCase().includes(q)
+      );
+    }
+
+    return filtered.slice(0, limit);
+  }
+
+  public clearAllLogs(): void {
+    this.data.activities = [];
+    this.data.errors_log = [];
+    this.data.work_sessions = [];
+    this.saveDatabase();
+  }
+
   public clearErrors(): void {
     this.data.errors_log = [];
     this.saveDatabase();

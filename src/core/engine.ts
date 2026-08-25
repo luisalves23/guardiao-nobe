@@ -1,6 +1,6 @@
 import { ShiftOrchestrator, ActiveCardTracker } from '../modules/shift/index.js';
 import { AutoRescueWatcher } from '../modules/watcher/index.js';
-import { TelegramAdapter } from '../modules/messaging/index.js';
+import { TelegramAdapter, MessageDispatcher } from '../modules/messaging/index.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { StorageService } from '../services/storage.service.js';
 import { TrelloCardsManager } from '../modules/trello/index.js';
@@ -177,8 +177,15 @@ export class Engine {
       case 'encerrar':
         return await orchestrator.endShift();
       case 'comentar': {
-        const text = args.join(' ');
+        const text = args.join(' ').trim();
         if (!text) return 'Envie o texto do comentário: /comentar Desenvolvendo tela de login';
+
+        const dispatcher = MessageDispatcher.getInstance();
+        if (dispatcher.isQuestionPending()) {
+          await dispatcher.submitActivityAnswer(text, 'TELEGRAM');
+          return `✅ Comentário registrado no card com sucesso:\n"${text}"`;
+        }
+
         const cardId = orchestrator.getActiveCardId();
         if (!cardId) return 'Nenhum card ativo no momento.';
         

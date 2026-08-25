@@ -160,29 +160,33 @@ export class TelegramAdapter {
       source: 'TELEGRAM',
     });
 
-    // 1. Se estiver aguardando a resposta da pergunta de atividade
-    if (this.isAwaitingAnswer && this.pendingQuestionResolve) {
-      const resolve = this.pendingQuestionResolve;
-      this.clearPendingQuestion();
-
-      // Remove prefixo /comentar ou !comentar se o usuário enviou com comando
+    // 1. Se estiver aguardando resposta da pergunta de atividade
+    const isPendingQuestion = this.isAwaitingAnswer || (this.commandHandler === null && cleanText.length > 0);
+    if (this.isAwaitingAnswer) {
       let commentText = cleanText;
       if (commentText.toLowerCase().startsWith('/comentar') || commentText.toLowerCase().startsWith('!comentar')) {
         commentText = commentText.replace(/^[/!]comentar\s*/i, '').trim();
       }
 
-      StorageService.getInstance().addLog({
-        type: 'QUESTION_ANSWERED',
-        message: `Resposta de atividade recebida do usuário no Telegram: "${commentText}"`,
-        source: 'TELEGRAM',
-        details: { text: commentText },
-      });
+      if (commentText && !commentText.startsWith('/start') && !commentText.startsWith('/ajuda') && !commentText.startsWith('/status') && !commentText.startsWith('/menu')) {
+        const resolve = this.pendingQuestionResolve;
+        this.clearPendingQuestion();
 
-      resolve(commentText);
+        StorageService.getInstance().addLog({
+          type: 'QUESTION_ANSWERED',
+          message: `Resposta de atividade recebida do usuário no Telegram: "${commentText}"`,
+          source: 'TELEGRAM',
+          details: { text: commentText },
+        });
 
-      const reply = `✅ - [COMENTÁRIO REGISTRADO] - Postado no Trello com sucesso:\n"${commentText}"`;
-      await this.sendMessage(chatId, reply);
-      return reply;
+        if (resolve) {
+          resolve(commentText);
+        }
+
+        const reply = `✅ - [COMENTÁRIO REGISTRADO] - Postado no Trello com sucesso:\n"${commentText}"`;
+        await this.sendMessage(chatId, reply);
+        return reply;
+      }
     }
 
     // 2. Comandos com barra / ou !

@@ -58,7 +58,7 @@ export class MessageDispatcher {
       this.activeQuestionResolver = finish;
 
       let channelPromise: Promise<string | null>;
-      if (telegram.isConfigured()) {
+      if (telegram.hasBotToken()) {
         channelPromise = telegram.askActivityQuestion(timeoutMs, () => {
           if (!resolved) {
             if (onTimeout) onTimeout();

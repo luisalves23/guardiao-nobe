@@ -131,25 +131,32 @@ export function createServer() {
     }
   });
 
-  // 6. Logs de Auditoria (30 dias)
+  // 6. Logs de Auditoria Unificados (Feed Completo)
+  app.get('/api/logs/unified', (req: Request, res: Response) => {
+    const limit = Number(req.query.limit) || 300;
+    const category = req.query.category as string | undefined;
+    const search = req.query.search as string | undefined;
+    const logs = DatabaseService.getInstance().getUnifiedLogs(limit, category, search);
+    res.json(logs);
+  });
+
   app.get('/api/logs', (req: Request, res: Response) => {
     const limit = Number(req.query.limit) || 100;
     res.json(StorageService.getInstance().getLogs(limit));
   });
 
   app.get('/api/logs/export', (_req: Request, res: Response) => {
-    const logs = StorageService.getInstance().getAllLogs();
+    const logs = DatabaseService.getInstance().getUnifiedLogs(5000);
     const dateStr = new Date().toISOString().split('T')[0];
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="guardiao_nobe_logs_${dateStr}.json"`);
+    res.setHeader('Content-Disposition', `attachment; filename="guardiao_nobe_auditoria_${dateStr}.json"`);
     res.send(JSON.stringify(logs, null, 2));
   });
 
   app.post('/api/logs/clear', (_req: Request, res: Response) => {
     try {
       StorageService.getInstance().clearLogs();
-      DatabaseService.getInstance().clearErrors();
-      DatabaseService.getInstance().clearActivities();
+      DatabaseService.getInstance().clearAllLogs();
       res.json({ success: true, message: 'Todos os logs e atividades foram limpos com sucesso.' });
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message });
