@@ -1,9 +1,8 @@
-import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
-const DB_FILE = path.join(DATA_DIR, 'guardiao.db');
+const DB_FILE = path.join(DATA_DIR, 'guardiao_db.json');
 
 export interface WorkSession {
   id: number;
@@ -41,17 +40,25 @@ export interface ErrorLogRecord {
   created_at: string;
 }
 
+interface DatabaseSchema {
+  nextSessionId: number;
+  nextActivityId: number;
+  nextErrorId: number;
+  work_sessions: WorkSession[];
+  activities: ActivityRecord[];
+  errors_log: ErrorLogRecord[];
+}
+
 export class DatabaseService {
   private static instance: DatabaseService;
-  private db: DatabaseSync;
+  private data: DatabaseSchema;
 
   private constructor() {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
 
-    this.db = new DatabaseSync(DB_FILE);
-    this.initDatabase();
+    this.data = this.loadDatabase();
   }
 
   public static getInstance(): DatabaseService {
@@ -61,74 +68,43 @@ export class DatabaseService {
     return DatabaseService.instance;
   }
 
-  private initDatabase(): void {
-    // Configurações de performance e integridade do SQLite
-    this.db.exec('PRAGMA journal_mode = WAL;');
-    this.db.exec('PRAGMA foreign_keys = ON;');
+  private loadDatabase(): DatabaseSchema {
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        return {
+          nextSessionId: parsed.nextSessionId || 1,
+          nextActivityId: parsed.nextActivityId || 1,
+          nextErrorId: parsed.nextErrorId || 1,
+          work_sessions: parsed.work_sessions || [],
+          activities: parsed.activities || [],
+          errors_log: parsed.errors_log || [],
+        };
+      }
+    } catch (err: any) {
+      console.warn('[DatabaseService] Arquivo de dados corrompido ou ausente. Reinicializando:', err.message);
+    }
 
-    // Tabela: work_sessions (Sessões reais de expediente)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS work_sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        card_id TEXT,
-        card_name TEXT,
-        date_str TEXT NOT NULL,
-        state TEXT NOT NULL,
-        start_time INTEGER NOT NULL,
-        end_time INTEGER,
-        duration_seconds REAL NOT NULL DEFAULT 0,
-        end_reason TEXT,
-        is_active INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_sessions_date ON work_sessions(date_str);
-      CREATE INDEX IF NOT EXISTS idx_sessions_active ON work_sessions(is_active);
-    `);
+    const defaultData: DatabaseSchema = {
+      nextSessionId: 1,
+      nextActivityId: 1,
+      nextErrorId: 1,
+      work_sessions: [],
+      activities: [],
+      errors_log: [],
+    };
+    this.saveDatabase(defaultData);
+    return defaultData;
+  }
 
-    // Tabela: activities (Histórico completo auditável de todas as ações)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS activities (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp INTEGER NOT NULL,
-        category TEXT NOT NULL,
-        action TEXT NOT NULL,
-        title TEXT NOT NULL,
-        details TEXT,
-        is_error INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_activities_ts ON activities(timestamp);
-      CREATE INDEX IF NOT EXISTS idx_activities_cat ON activities(category);
-      CREATE INDEX IF NOT EXISTS idx_activities_err ON activities(is_error);
-    `);
-
-    // Tabela: errors_log (Rastreamento aprofundado de falhas e causas)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS errors_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp INTEGER NOT NULL,
-        module TEXT NOT NULL,
-        error_code TEXT,
-        error_message TEXT NOT NULL,
-        stack_trace TEXT,
-        context_json TEXT,
-        created_at TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_errors_ts ON errors_log(timestamp);
-      CREATE INDEX IF NOT EXISTS idx_errors_module ON errors_log(module);
-    `);
-
-    // Tabela: daily_metrics (Sumários diários calculados)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS daily_metrics (
-        date_str TEXT PRIMARY KEY,
-        total_seconds REAL NOT NULL DEFAULT 0,
-        total_earnings REAL NOT NULL DEFAULT 0,
-        sessions_count INTEGER NOT NULL DEFAULT 0,
-        comments_count INTEGER NOT NULL DEFAULT 0,
-        last_updated TEXT NOT NULL
-      );
-    `);
+  private saveDatabase(dataToSave?: DatabaseSchema): void {
+    try {
+      const data = dataToSave || this.data;
+      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (err: any) {
+      console.error('[DatabaseService] Erro ao salvar banco de dados em disco:', err.message);
+    }
   }
 
   // ----------------------------------------------------
@@ -141,25 +117,10 @@ export class DatabaseService {
     // Fecha qualquer sessão ativa pendente antes de abrir uma nova
     this.endActiveWorkSession('TRANSITION_NEW_SESSION');
 
-    const stmt = this.db.prepare(`
-      INSERT INTO work_sessions (
-        card_id, card_name, date_str, state, start_time, end_time,
-        duration_seconds, end_reason, is_active, created_at
-      ) VALUES (?, ?, ?, ?, ?, NULL, 0, NULL, 1, ?)
-    `);
-
+    const sessionId = this.data.nextSessionId++;
     const createdAt = new Date(now).toISOString();
-    const result = stmt.run(cardId, cardName, dateStr, state, now, createdAt);
-    const sessionId = Number(result.lastInsertRowid);
 
-    this.logActivity(
-      'CONTROL',
-      'SESSION_START',
-      `Sessão iniciada: ${state}`,
-      JSON.stringify({ sessionId, cardId, cardName, state, startTime: createdAt })
-    );
-
-    return {
+    const session: WorkSession = {
       id: sessionId,
       card_id: cardId,
       card_name: cardName,
@@ -172,22 +133,38 @@ export class DatabaseService {
       is_active: 1,
       created_at: createdAt,
     };
+
+    this.data.work_sessions.push(session);
+    this.saveDatabase();
+
+    this.logActivity(
+      'CONTROL',
+      'SESSION_START',
+      `Sessão iniciada: ${state}`,
+      JSON.stringify({ sessionId, cardId, cardName, state, startTime: createdAt })
+    );
+
+    return session;
   }
 
   public endActiveWorkSession(reason = 'USER_ACTION'): WorkSession | null {
-    const active = this.getActiveWorkSession();
-    if (!active) return null;
+    const activeIndex = this.data.work_sessions.findIndex((s) => s.is_active === 1);
+    if (activeIndex === -1) return null;
 
+    const active = this.data.work_sessions[activeIndex];
     const now = Date.now();
     const durationSec = Math.max(0, (now - active.start_time) / 1000);
 
-    const stmt = this.db.prepare(`
-      UPDATE work_sessions
-      SET end_time = ?, duration_seconds = ?, end_reason = ?, is_active = 0
-      WHERE id = ?
-    `);
+    const updatedSession: WorkSession = {
+      ...active,
+      end_time: now,
+      duration_seconds: durationSec,
+      end_reason: reason,
+      is_active: 0,
+    };
 
-    stmt.run(now, durationSec, reason, active.id);
+    this.data.work_sessions[activeIndex] = updatedSession;
+    this.saveDatabase();
 
     this.logActivity(
       'CONTROL',
@@ -196,29 +173,17 @@ export class DatabaseService {
       JSON.stringify({ sessionId: active.id, reason, durationSeconds: durationSec })
     );
 
-    return {
-      ...active,
-      end_time: now,
-      duration_seconds: durationSec,
-      end_reason: reason,
-      is_active: 0,
-    };
+    return updatedSession;
   }
 
   public getActiveWorkSession(): WorkSession | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM work_sessions WHERE is_active = 1 ORDER BY id DESC LIMIT 1
-    `);
-    const row = stmt.get() as any;
-    return row || null;
+    const active = this.data.work_sessions.slice().reverse().find((s) => s.is_active === 1);
+    return active || null;
   }
 
   public getTodayWorkSessions(dateStr?: string): WorkSession[] {
     const date = dateStr || this.getTodayDateStr();
-    const stmt = this.db.prepare(`
-      SELECT * FROM work_sessions WHERE date_str = ? ORDER BY id ASC
-    `);
-    return stmt.all(date) as any[];
+    return this.data.work_sessions.filter((s) => s.date_str === date);
   }
 
   /**
@@ -227,16 +192,11 @@ export class DatabaseService {
   public getTodayWorkedSeconds(dateStr?: string): number {
     const date = dateStr || this.getTodayDateStr();
     const now = Date.now();
-
-    const stmt = this.db.prepare(`
-      SELECT * FROM work_sessions WHERE date_str = ? AND state = 'WORKING' ORDER BY id ASC
-    `);
-    const sessions = stmt.all(date) as any[];
+    const sessions = this.data.work_sessions.filter((s) => s.date_str === date && s.state === 'WORKING');
 
     let totalSeconds = 0;
     for (const sess of sessions) {
       if (sess.is_active === 1 || sess.end_time === null) {
-        // Sessão ainda aberta
         const currentDuration = Math.max(0, (now - sess.start_time) / 1000);
         totalSeconds += currentDuration;
       } else {
@@ -259,16 +219,10 @@ export class DatabaseService {
   ): ActivityRecord {
     const now = Date.now();
     const createdAt = new Date(now).toISOString();
+    const activityId = this.data.nextActivityId++;
 
-    const stmt = this.db.prepare(`
-      INSERT INTO activities (timestamp, category, action, title, details, is_error, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(now, category, action, title, details || null, isError ? 1 : 0, createdAt);
-
-    return {
-      id: Number(result.lastInsertRowid),
+    const record: ActivityRecord = {
+      id: activityId,
       timestamp: now,
       category,
       action,
@@ -277,25 +231,28 @@ export class DatabaseService {
       is_error: isError ? 1 : 0,
       created_at: createdAt,
     };
+
+    this.data.activities.push(record);
+    // Limita atividades a no máximo 5000 registros para economizar memória e I/O
+    if (this.data.activities.length > 5000) {
+      this.data.activities = this.data.activities.slice(-5000);
+    }
+    this.saveDatabase();
+
+    return record;
   }
 
   public getRecentActivities(limit = 100, category?: string, errorsOnly = false): ActivityRecord[] {
-    let query = 'SELECT * FROM activities WHERE 1=1';
-    const params: any[] = [];
+    let list = this.data.activities.slice().reverse();
 
     if (category) {
-      query += ' AND category = ?';
-      params.push(category);
+      list = list.filter((a) => a.category === category);
     }
     if (errorsOnly) {
-      query += ' AND is_error = 1';
+      list = list.filter((a) => a.is_error === 1);
     }
 
-    query += ' ORDER BY id DESC LIMIT ?';
-    params.push(limit);
-
-    const stmt = this.db.prepare(query);
-    return stmt.all(...params) as any[];
+    return list.slice(0, limit);
   }
 
   // ----------------------------------------------------
@@ -311,19 +268,10 @@ export class DatabaseService {
     const now = Date.now();
     const createdAt = new Date(now).toISOString();
     const contextJson = context ? (typeof context === 'string' ? context : JSON.stringify(context)) : null;
+    const errorId = this.data.nextErrorId++;
 
-    const stmt = this.db.prepare(`
-      INSERT INTO errors_log (timestamp, module, error_code, error_message, stack_trace, context_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(now, module, errorCode || null, errorMessage, stackTrace || null, contextJson, createdAt);
-
-    // Registra também na tabela de atividades
-    this.logActivity('ERROR', 'ERROR_OCCURRED', `[${module}] ${errorMessage}`, contextJson, true);
-
-    return {
-      id: Number(result.lastInsertRowid),
+    const errorRecord: ErrorLogRecord = {
+      id: errorId,
       timestamp: now,
       module,
       error_code: errorCode || null,
@@ -332,21 +280,31 @@ export class DatabaseService {
       context_json: contextJson,
       created_at: createdAt,
     };
+
+    this.data.errors_log.push(errorRecord);
+    if (this.data.errors_log.length > 1000) {
+      this.data.errors_log = this.data.errors_log.slice(-1000);
+    }
+    this.saveDatabase();
+
+    // Registra também na lista de atividades
+    this.logActivity('ERROR', 'ERROR_OCCURRED', `[${module}] ${errorMessage}`, contextJson, true);
+
+    return errorRecord;
   }
 
   public getRecentErrors(limit = 50): ErrorLogRecord[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM errors_log ORDER BY id DESC LIMIT ?
-    `);
-    return stmt.all(limit) as any[];
+    return this.data.errors_log.slice().reverse().slice(0, limit);
   }
 
   public clearErrors(): void {
-    this.db.prepare(`DELETE FROM errors_log`).run();
+    this.data.errors_log = [];
+    this.saveDatabase();
   }
 
   public clearActivities(): void {
-    this.db.prepare(`DELETE FROM activities`).run();
+    this.data.activities = [];
+    this.saveDatabase();
   }
 
   // ----------------------------------------------------
