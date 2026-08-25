@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { AppConfig, AuditLog, AgendaItem } from '../types/index.js';
+import { DatabaseService } from './database.service.js';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -115,15 +116,29 @@ export class StorageService {
 
   private loadAll() {
     try {
+      const db = DatabaseService.getInstance();
+      const dbConfig = db.getSystemConfig();
+      const dbTemplates = db.getFallbackTemplates();
+      const dbAgenda = db.getAgendaItems();
+
       if (fs.existsSync(CONFIG_FILE)) {
         const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
         this.config = {
           ...DEFAULT_CONFIG,
           ...parsed,
-          trello: { ...DEFAULT_CONFIG.trello, ...(parsed.trello || {}) },
-          actionMessages: { ...DEFAULT_CONFIG.actionMessages, ...(parsed.actionMessages || {}) },
+          ...(dbConfig || {}),
+          trello: { ...DEFAULT_CONFIG.trello, ...(parsed.trello || {}), ...(dbConfig?.trello || {}) },
+          actionMessages: { ...DEFAULT_CONFIG.actionMessages, ...(parsed.actionMessages || {}), ...(dbConfig?.actionMessages || {}) },
+          fallbackTemplates: dbTemplates || parsed.fallbackTemplates || DEFAULT_CONFIG.fallbackTemplates,
         };
+      } else if (dbConfig) {
+        this.config = {
+          ...DEFAULT_CONFIG,
+          ...dbConfig,
+          fallbackTemplates: dbTemplates || dbConfig.fallbackTemplates || DEFAULT_CONFIG.fallbackTemplates,
+        };
+        this.saveConfig(this.config);
       } else {
         this.saveConfig(DEFAULT_CONFIG);
       }
@@ -131,6 +146,8 @@ export class StorageService {
       if (fs.existsSync(AGENDA_FILE)) {
         const raw = fs.readFileSync(AGENDA_FILE, 'utf-8');
         this.agenda = JSON.parse(raw);
+      } else if (dbAgenda) {
+        this.agenda = dbAgenda;
       }
 
       if (fs.existsSync(LOGS_FILE)) {
@@ -158,8 +175,16 @@ export class StorageService {
       ...newConfig,
       trello: { ...this.config.trello, ...(newConfig.trello || {}) },
       actionMessages: { ...this.config.actionMessages, ...(newConfig.actionMessages || {}) },
+      fallbackTemplates: newConfig.fallbackTemplates || this.config.fallbackTemplates,
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(this.config, null, 2), 'utf-8');
+    
+    // Persiste também no DatabaseService
+    DatabaseService.getInstance().saveSystemConfig(this.config);
+    if (this.config.fallbackTemplates) {
+      DatabaseService.getInstance().saveFallbackTemplates(this.config.fallbackTemplates);
+    }
+
     return this.config;
   }
 
@@ -170,6 +195,7 @@ export class StorageService {
   public saveAgenda(newAgenda: AgendaItem[]): AgendaItem[] {
     this.agenda = newAgenda;
     fs.writeFileSync(AGENDA_FILE, JSON.stringify(this.agenda, null, 2), 'utf-8');
+    DatabaseService.getInstance().saveAgendaItems(this.agenda);
     return this.agenda;
   }
 
@@ -207,6 +233,7 @@ export class StorageService {
   public clearLogs(): void {
     this.logs = [];
     this.persistLogs();
+    DatabaseService.getInstance().clearActivities();
   }
 
   private pruneOldLogs() {

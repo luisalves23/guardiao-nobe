@@ -47,6 +47,9 @@ interface DatabaseSchema {
   work_sessions: WorkSession[];
   activities: ActivityRecord[];
   errors_log: ErrorLogRecord[];
+  system_config?: any | null;
+  fallback_templates?: string[] | null;
+  agenda_items?: any[] | null;
 }
 
 export class DatabaseService {
@@ -80,6 +83,9 @@ export class DatabaseService {
           work_sessions: parsed.work_sessions || [],
           activities: parsed.activities || [],
           errors_log: parsed.errors_log || [],
+          system_config: parsed.system_config || null,
+          fallback_templates: parsed.fallback_templates || null,
+          agenda_items: parsed.agenda_items || null,
         };
       }
     } catch (err: any) {
@@ -93,6 +99,9 @@ export class DatabaseService {
       work_sessions: [],
       activities: [],
       errors_log: [],
+      system_config: null,
+      fallback_templates: null,
+      agenda_items: null,
     };
     this.saveDatabase(defaultData);
     return defaultData;
@@ -105,6 +114,36 @@ export class DatabaseService {
     } catch (err: any) {
       console.error('[DatabaseService] Erro ao salvar banco de dados em disco:', err.message);
     }
+  }
+
+  // ----------------------------------------------------
+  // GESTÃO DE CONFIGURAÇÕES E TEMPLATES PERSISTENTES
+  // ----------------------------------------------------
+  public getSystemConfig(): any | null {
+    return this.data.system_config || null;
+  }
+
+  public saveSystemConfig(config: any): void {
+    this.data.system_config = config;
+    this.saveDatabase();
+  }
+
+  public getFallbackTemplates(): string[] | null {
+    return this.data.fallback_templates || null;
+  }
+
+  public saveFallbackTemplates(templates: string[]): void {
+    this.data.fallback_templates = templates;
+    this.saveDatabase();
+  }
+
+  public getAgendaItems(): any[] | null {
+    return this.data.agenda_items || null;
+  }
+
+  public saveAgendaItems(items: any[]): void {
+    this.data.agenda_items = items;
+    this.saveDatabase();
   }
 
   // ----------------------------------------------------
@@ -233,7 +272,6 @@ export class DatabaseService {
     };
 
     this.data.activities.push(record);
-    // Limita atividades a no máximo 5000 registros para economizar memória e I/O
     if (this.data.activities.length > 5000) {
       this.data.activities = this.data.activities.slice(-5000);
     }

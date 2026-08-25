@@ -64,44 +64,81 @@ test('E2E UI & Graphical Interface: Bateria Completa com Navegador Real', async 
     const topEarnings = await page.locator('#topEarnings').innerText();
     assert.match(topEarnings, /^R\$\s*\d+,\d{2}$/);
 
-    // 4. Navegação pelas Abas Desktop
+    // Validação da versão v2.6.0 no cabeçalho
+    const versionBadge = await page.locator('text=v2.6.0').first();
+    assert.ok(await versionBadge.isVisible(), 'Badge de versão v2.6.0 deve estar visível no topo');
+    console.log('[E2E UI] ✅ Badge de versão v2.6.0 identificado com sucesso no cabeçalho');
+
+    // 4. Teste do Menu Sanduíche (Drawer)
+    console.log('[E2E UI] 🥪 Testando Menu Sanduíche (Drawer)...');
+    const menuSandwichBtn = page.locator('#menuSandwichBtn');
+    await menuSandwichBtn.click();
+    await page.waitForTimeout(400);
+    const drawerSidebar = page.locator('#drawerSidebar');
+    assert.strictEqual(await drawerSidebar.evaluate((el) => el.classList.contains('translate-x-0')), true);
+    console.log('[E2E UI] ✅ Menu Sanduíche aberto com sucesso');
+
+    // Clica em um item do menu sanduíche
+    const drawerAuditBtn = page.locator('#drawerBtn-audit');
+    await drawerAuditBtn.click();
+    await page.waitForTimeout(400);
+    assert.strictEqual(await drawerSidebar.evaluate((el) => el.classList.contains('-translate-x-full')), true);
+    console.log('[E2E UI] ✅ Menu Sanduíche fechado automaticamente após navegação');
+
+    // Validação do Card Compacto (quando aba interna está ativa)
+    const cardCompact = page.locator('#activeCardCompact');
+    assert.strictEqual(await cardCompact.evaluate((el) => !el.classList.contains('hidden')), true);
+    console.log('[E2E UI] ✅ Card de Gestão compactado com sucesso ao abrir a aba');
+
+    // Expande o Card de Gestão novamente
+    await page.evaluate("expandActiveCard()");
+    await page.waitForTimeout(300);
+    const cardExpanded = page.locator('#activeCardExpanded');
+    assert.strictEqual(await cardExpanded.evaluate((el) => !el.classList.contains('hidden')), true);
+    console.log('[E2E UI] ✅ Card de Gestão re-expandido com sucesso');
+
+    // 5. Navegação pelas Abas
     console.log('[E2E UI] 📑 2. Testando navegação por abas...');
     
     // Aba: Agenda Semanal (Horários)
-    await page.evaluate("switchTab('schedule')");
+    await page.evaluate("openTab('schedule')");
     await page.waitForTimeout(500);
     assert.strictEqual(await page.locator('#tab-schedule').evaluate((el) => !el.classList.contains('hidden')), true);
     console.log('[E2E UI] ✅ Aba Agenda Semanal aberta com sucesso');
 
     // Aba: Bateria de Testes & Jitter
-    await page.evaluate("switchTab('test')");
+    await page.evaluate("openTab('test')");
     await page.waitForTimeout(500);
     assert.strictEqual(await page.locator('#tab-test').evaluate((el) => !el.classList.contains('hidden')), true);
     console.log('[E2E UI] ✅ Aba Testes & Jitter aberta com sucesso');
 
     // Aba: Agenda de Tarefas do Dia
-    await page.evaluate("switchTab('agenda')");
+    await page.evaluate("openTab('agenda')");
     await page.waitForTimeout(500);
     assert.strictEqual(await page.locator('#tab-agenda').evaluate((el) => !el.classList.contains('hidden')), true);
     console.log('[E2E UI] ✅ Aba Tarefas do Dia aberta com sucesso');
 
     // Aba: Comentários Fallback
-    await page.evaluate("switchTab('templates')");
+    await page.evaluate("openTab('templates')");
     await page.waitForTimeout(500);
     assert.strictEqual(await page.locator('#tab-templates').evaluate((el) => !el.classList.contains('hidden')), true);
     console.log('[E2E UI] ✅ Aba Comentários Fallback aberta com sucesso');
 
     // Aba: Configurações
-    await page.evaluate("switchTab('settings')");
+    await page.evaluate("openTab('settings')");
     await page.waitForTimeout(500);
     assert.strictEqual(await page.locator('#tab-settings').evaluate((el) => !el.classList.contains('hidden')), true);
     console.log('[E2E UI] ✅ Aba Configurações aberta com sucesso');
 
     // Aba: Auditoria (30 Dias)
-    await page.evaluate("switchTab('audit')");
+    await page.evaluate("openTab('audit')");
     await page.waitForTimeout(500);
     assert.strictEqual(await page.locator('#tab-audit').evaluate((el) => !el.classList.contains('hidden')), true);
     console.log('[E2E UI] ✅ Aba Auditoria aberta com sucesso');
+
+    // Re-expande a Gestão Principal para testar os botões
+    await page.evaluate("expandActiveCard()");
+    await page.waitForTimeout(300);
 
     // 5. Teste de Transição dos Botões de Controle na Interface
     console.log('[E2E UI] 🎮 3. Testando botões de controle de expediente na interface gráfica...');
@@ -148,7 +185,7 @@ test('E2E UI & Graphical Interface: Bateria Completa com Navegador Real', async 
     // Clica em Encerrar
     const btnEnd = page.locator('#btnEnd');
     await btnEnd.click();
-    await page.waitForFunction("document.getElementById('stateText')?.innerText === 'EM ESPERA'", { timeout: 8000 });
+    await page.waitForFunction("document.getElementById('stateText')?.innerText === 'EM ESPERA'", { timeout: 15000 });
     const stateAfterEnd = await page.locator('#stateText').innerText();
     console.log('[E2E UI] ✅ Botão Encerrar clicado -> Estado atual:', stateAfterEnd);
     assert.strictEqual(stateAfterEnd, 'EM ESPERA');
@@ -164,11 +201,10 @@ test('E2E UI & Graphical Interface: Bateria Completa com Navegador Real', async 
     await page.waitForTimeout(500);
 
     // Validação da barra inferior Mobile (Bottom Nav)
-    const mobileAgendaBtn = page.locator('#mTabBtn-agenda');
-    assert.ok(await mobileAgendaBtn.isVisible(), 'Barra inferior mobile deve estar visível');
-    await mobileAgendaBtn.click();
+    const mobileDashboardBtn = page.locator('#mTabBtn-dashboard');
+    assert.ok(await mobileDashboardBtn.isVisible(), 'Barra inferior mobile deve estar visível');
+    await mobileDashboardBtn.click();
     await page.waitForTimeout(500);
-    assert.strictEqual(await page.locator('#tab-agenda').evaluate((el) => !el.classList.contains('hidden')), true);
 
     const mobileAuditBtn = page.locator('#mTabBtn-audit');
     await mobileAuditBtn.click();

@@ -76,12 +76,65 @@ function connectWebSocket() {
   }
 }
 
-// Alternador de Abas (Desktop & Mobile)
-function switchTab(tabId) {
+// Controles do Menu Sanduíche (Drawer)
+function toggleDrawerMenu() {
+  const sidebar = document.getElementById('drawerSidebar');
+  const overlay = document.getElementById('drawerOverlay');
+  if (!sidebar || !overlay) return;
+
+  const isOpen = !sidebar.classList.contains('-translate-x-full');
+  if (isOpen) {
+    closeDrawerMenu();
+  } else {
+    overlay.classList.remove('opacity-0', 'pointer-events-none');
+    overlay.classList.add('opacity-100', 'pointer-events-auto');
+    sidebar.classList.remove('-translate-x-full');
+    sidebar.classList.add('translate-x-0');
+  }
+}
+
+function closeDrawerMenu() {
+  const sidebar = document.getElementById('drawerSidebar');
+  const overlay = document.getElementById('drawerOverlay');
+  if (!sidebar || !overlay) return;
+
+  overlay.classList.remove('opacity-100', 'pointer-events-auto');
+  overlay.classList.add('opacity-0', 'pointer-events-none');
+  sidebar.classList.remove('translate-x-0');
+  sidebar.classList.add('-translate-x-full');
+}
+
+// Navegação Dinâmica: Abre Abas e Reduz/Expande Card de Gestão
+function openTab(tabId) {
   currentTab = tabId;
-  document.querySelectorAll('.tab-content').forEach((el) => el.classList.add('hidden'));
-  const targetTab = document.getElementById(`tab-${tabId}`);
-  if (targetTab) targetTab.classList.remove('hidden');
+  closeDrawerMenu();
+
+  const cardExpanded = document.getElementById('activeCardExpanded');
+  const cardCompact = document.getElementById('activeCardCompact');
+
+  if (tabId === 'dashboard') {
+    // Modo Gestão Completa (Expandido)
+    if (cardExpanded) cardExpanded.classList.remove('hidden');
+    if (cardCompact) cardCompact.classList.add('hidden');
+    document.querySelectorAll('.tab-content').forEach((el) => el.classList.add('hidden'));
+  } else {
+    // Modo Aba Interna: Reduz o Card de Gestão para a barra superior compacta
+    if (cardExpanded) cardExpanded.classList.add('hidden');
+    if (cardCompact) cardCompact.classList.remove('hidden');
+    
+    document.querySelectorAll('.tab-content').forEach((el) => el.classList.add('hidden'));
+    const targetTab = document.getElementById(`tab-${tabId}`);
+    if (targetTab) targetTab.classList.remove('hidden');
+  }
+
+  // Atualiza botões no Drawer Menu
+  document.querySelectorAll('[id^="drawerBtn-"]').forEach((btn) => {
+    btn.className = 'w-full px-3.5 py-2.5 rounded-xl text-slate-300 hover:bg-slate-800/80 hover:text-white flex items-center space-x-3 transition active:scale-95 text-left';
+  });
+  const activeDrawerBtn = document.getElementById(`drawerBtn-${tabId}`);
+  if (activeDrawerBtn) {
+    activeDrawerBtn.className = 'w-full px-3.5 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold flex items-center space-x-3 transition active:scale-95 text-left';
+  }
 
   // Atualiza botões Desktop
   document.querySelectorAll('[id^="tabBtn-"]').forEach((btn) => {
@@ -111,54 +164,113 @@ function switchTab(tabId) {
   if (window.lucide) window.lucide.createIcons();
 }
 
+// Alias para compatibilidade
+function switchTab(tabId) {
+  openTab(tabId);
+}
+
+function expandActiveCard() {
+  const cardExpanded = document.getElementById('activeCardExpanded');
+  const cardCompact = document.getElementById('activeCardCompact');
+  if (cardExpanded) cardExpanded.classList.remove('hidden');
+  if (cardCompact) cardCompact.classList.add('hidden');
+  if (window.lucide) window.lucide.createIcons();
+}
+
 // Renderização do Status Principal
 function renderLiveStatus() {
   if (!liveStatus) return;
 
   const stateText = document.getElementById('stateText');
   const stateDot = document.getElementById('stateDot');
+  const compactStateText = document.getElementById('compactStateText');
+  const compactStateDot = document.getElementById('compactStateDot');
   const activeCardTitle = document.getElementById('activeCardTitle');
+  const compactCardTitle = document.getElementById('compactCardTitle');
   const topEarnings = document.getElementById('topEarnings');
   const topHours = document.getElementById('topHours');
 
   // Badge de Estado
   if (liveStatus.state === 'WORKING') {
-    stateText.innerText = 'TRABALHANDO';
-    stateDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
-    stateText.className = 'text-xs font-bold text-emerald-400 uppercase tracking-wider';
-    document.getElementById('btnStart').classList.add('hidden');
-    document.getElementById('btnPause').classList.remove('hidden');
-    document.getElementById('btnResume').classList.add('hidden');
-    document.getElementById('btnLunch').classList.remove('hidden');
+    if (stateText) {
+      stateText.innerText = 'TRABALHANDO';
+      stateText.className = 'text-xs font-bold text-emerald-400 uppercase tracking-wider';
+    }
+    if (stateDot) stateDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
+    if (compactStateText) {
+      compactStateText.innerText = 'TRABALHANDO';
+      compactStateText.className = 'text-[10px] font-bold text-emerald-400 uppercase tracking-wider';
+    }
+    if (compactStateDot) compactStateDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0';
+
+    const bStart = document.getElementById('btnStart');
+    const bPause = document.getElementById('btnPause');
+    const bResume = document.getElementById('btnResume');
+    const bLunch = document.getElementById('btnLunch');
+    if (bStart) bStart.classList.add('hidden');
+    if (bPause) bPause.classList.remove('hidden');
+    if (bResume) bResume.classList.add('hidden');
+    if (bLunch) bLunch.classList.remove('hidden');
   } else if (liveStatus.state === 'PAUSED') {
-    stateText.innerText = 'PAUSADO';
-    stateDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
-    stateText.className = 'text-xs font-bold text-amber-400 uppercase tracking-wider';
-    document.getElementById('btnStart').classList.add('hidden');
-    document.getElementById('btnPause').classList.add('hidden');
-    document.getElementById('btnResume').classList.remove('hidden');
+    if (stateText) {
+      stateText.innerText = 'PAUSADO';
+      stateText.className = 'text-xs font-bold text-amber-400 uppercase tracking-wider';
+    }
+    if (stateDot) stateDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
+    if (compactStateText) {
+      compactStateText.innerText = 'PAUSADO';
+      compactStateText.className = 'text-[10px] font-bold text-amber-400 uppercase tracking-wider';
+    }
+    if (compactStateDot) compactStateDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0';
+
+    const bStart = document.getElementById('btnStart');
+    const bPause = document.getElementById('btnPause');
+    const bResume = document.getElementById('btnResume');
+    if (bStart) bStart.classList.add('hidden');
+    if (bPause) bPause.classList.add('hidden');
+    if (bResume) bResume.classList.remove('hidden');
   } else if (liveStatus.state === 'LUNCH') {
-    stateText.innerText = 'ALMOÇO';
-    stateDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
-    stateText.className = 'text-xs font-bold text-amber-400 uppercase tracking-wider';
-    document.getElementById('btnStart').classList.add('hidden');
-    document.getElementById('btnPause').classList.add('hidden');
-    document.getElementById('btnResume').classList.remove('hidden');
+    if (stateText) {
+      stateText.innerText = 'ALMOÇO';
+      stateText.className = 'text-xs font-bold text-amber-400 uppercase tracking-wider';
+    }
+    if (stateDot) stateDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
+    if (compactStateText) {
+      compactStateText.innerText = 'ALMOÇO';
+      compactStateText.className = 'text-[10px] font-bold text-amber-400 uppercase tracking-wider';
+    }
+    if (compactStateDot) compactStateDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0';
+
+    const bStart = document.getElementById('btnStart');
+    const bPause = document.getElementById('btnPause');
+    const bResume = document.getElementById('btnResume');
+    if (bStart) bStart.classList.add('hidden');
+    if (bPause) bPause.classList.add('hidden');
+    if (bResume) bResume.classList.remove('hidden');
   } else {
-    stateText.innerText = 'EM ESPERA';
-    stateDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-500';
-    stateText.className = 'text-xs font-bold text-slate-400 uppercase tracking-wider';
-    document.getElementById('btnStart').classList.remove('hidden');
-    document.getElementById('btnPause').classList.add('hidden');
-    document.getElementById('btnResume').classList.add('hidden');
+    if (stateText) {
+      stateText.innerText = 'EM ESPERA';
+      stateText.className = 'text-xs font-bold text-slate-400 uppercase tracking-wider';
+    }
+    if (stateDot) stateDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-500';
+    if (compactStateText) {
+      compactStateText.innerText = 'EM ESPERA';
+      compactStateText.className = 'text-[10px] font-bold text-slate-400 uppercase tracking-wider';
+    }
+    if (compactStateDot) compactStateDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-500 shrink-0';
+
+    const bStart = document.getElementById('btnStart');
+    const bPause = document.getElementById('btnPause');
+    const bResume = document.getElementById('btnResume');
+    if (bStart) bStart.classList.remove('hidden');
+    if (bPause) bPause.classList.add('hidden');
+    if (bResume) bResume.classList.add('hidden');
   }
 
   // Card Ativo
-  if (liveStatus.activeCardName) {
-    activeCardTitle.innerText = liveStatus.activeCardName;
-  } else {
-    activeCardTitle.innerText = 'Nenhum card em andamento';
-  }
+  const cardName = liveStatus.activeCardName || 'Nenhum card em andamento';
+  if (activeCardTitle) activeCardTitle.innerText = cardName;
+  if (compactCardTitle) compactCardTitle.innerText = cardName;
 
   // Horas & Ganhos
   if (topHours) {
@@ -175,10 +287,12 @@ function renderLiveStatus() {
 
   // WhatsApp Dot
   const waDot = document.getElementById('waDot');
-  if (liveStatus.isWhatsAppConnected) {
-    waDot.className = 'absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-900';
-  } else {
-    waDot.className = 'absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-slate-900';
+  if (waDot) {
+    if (liveStatus.isWhatsAppConnected) {
+      waDot.className = 'absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-900';
+    } else {
+      waDot.className = 'absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-slate-900';
+    }
   }
 
   updateTimersDisplay();
@@ -195,11 +309,18 @@ function formatHMSClient(totalSeconds) {
 
 // Atualização dos Contadores Regressivos
 function updateTimersDisplay() {
+  const countdownComment = document.getElementById('countdownComment');
+  const progressComment = document.getElementById('progressComment');
+  const countdownRotation = document.getElementById('countdownRotation');
+  const compactCountdownRotation = document.getElementById('compactCountdownRotation');
+  const progressRotation = document.getElementById('progressRotation');
+
   if (!liveStatus || liveStatus.state !== 'WORKING') {
-    document.getElementById('countdownComment').innerText = '--:--';
-    document.getElementById('progressComment').style.width = '0%';
-    document.getElementById('countdownRotation').innerText = '--:--:--';
-    document.getElementById('progressRotation').style.width = '0%';
+    if (countdownComment) countdownComment.innerText = '--:--';
+    if (progressComment) progressComment.style.width = '0%';
+    if (countdownRotation) countdownRotation.innerText = '--:--:--';
+    if (compactCountdownRotation) compactCountdownRotation.innerText = '--:--:--';
+    if (progressRotation) progressRotation.style.width = '0%';
     return;
   }
 
@@ -212,28 +333,31 @@ function updateTimersDisplay() {
 
   const now = Date.now();
 
-  // 1. Contador de Comentário (MM:SS ou HH:MM:SS se > 1h)
-  if (liveStatus.nextCommentTargetTime) {
+  // 1. Contador de Comentário (MM:SS ou HH:MM:SS)
+  if (liveStatus.nextCommentTargetTime && countdownComment && progressComment) {
     const target = new Date(liveStatus.nextCommentTargetTime).getTime();
     const remaining = Math.max(0, target - now);
-    document.getElementById('countdownComment').innerText = formatTimer(remaining);
+    countdownComment.innerText = formatTimer(remaining);
 
-    // Progresso baseado em janela média de 23 minutos
     const total = 23 * 60 * 1000;
     const progress = Math.min(100, Math.max(0, ((total - remaining) / total) * 100));
-    document.getElementById('progressComment').style.width = `${progress}%`;
+    progressComment.style.width = `${progress}%`;
   }
 
   // 2. Contador de Rotação de 4h (Regressivo Digital HH:MM:SS)
   if (liveStatus.nextRotationTargetTime) {
     const target = new Date(liveStatus.nextRotationTargetTime).getTime();
     const remaining = Math.max(0, target - now);
-    document.getElementById('countdownRotation').innerText = formatHMSCountdown(remaining);
+    const rotationHMS = formatHMSCountdown(remaining);
+    
+    if (countdownRotation) countdownRotation.innerText = rotationHMS;
+    if (compactCountdownRotation) compactCountdownRotation.innerText = rotationHMS;
 
-    // Progresso baseado em janela de 235 minutos (3h55)
-    const total = 235 * 60 * 1000;
-    const progress = Math.min(100, Math.max(0, ((total - remaining) / total) * 100));
-    document.getElementById('progressRotation').style.width = `${progress}%`;
+    if (progressRotation) {
+      const total = 235 * 60 * 1000;
+      const progress = Math.min(100, Math.max(0, ((total - remaining) / total) * 100));
+      progressRotation.style.width = `${progress}%`;
+    }
   }
 }
 
