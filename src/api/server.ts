@@ -239,6 +239,36 @@ export function createServer() {
     }
   });
 
+  // Resposta à Pergunta de Atividade (via Painel Web)
+  app.post('/api/activity/reply', async (req: Request, res: Response) => {
+    try {
+      const { text } = req.body;
+      const clean = (text || '').trim();
+      if (!clean) {
+        return res.status(400).json({ success: false, error: 'Texto do comentário é obrigatório.' });
+      }
+
+      const dispatcher = MessageDispatcher.getInstance();
+      const resolved = await dispatcher.submitActivityAnswer(clean, 'WEB');
+
+      if (!resolved) {
+        const status = Engine.getInstance().getStatus();
+        if (status.activeCardId) {
+          await TrelloService.getInstance().addComment(status.activeCardId, clean);
+          StorageService.getInstance().addLog({
+            type: 'COMMENT_SENT',
+            message: `Comentário direto enviado via Painel Web: "${clean}"`,
+            source: 'USER_WEB',
+          });
+        }
+      }
+
+      res.json({ success: true, message: 'Comentário registrado com sucesso!' });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   // 8. WhatsApp e Webhook
   app.get('/api/whatsapp/status', (_req: Request, res: Response) => {
     res.json(WhatsAppService.getInstance().getStatus());

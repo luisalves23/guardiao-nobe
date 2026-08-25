@@ -72,7 +72,7 @@
           </div>
           <div>
             <h2 class="font-bold text-sm text-white">Menu Guardião</h2>
-            <span class="text-[10px] text-blue-400 font-mono font-bold">Versão v2.6.1</span>
+            <span class="text-[10px] text-blue-400 font-mono font-bold">Versão v2.7.0</span>
           </div>
         </div>
         <button onclick="closeDrawerMenu()" class="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition active:scale-95">
@@ -140,7 +140,7 @@
             <div class="flex items-center space-x-1.5">
               <h1 class="font-bold text-sm sm:text-base tracking-tight text-white leading-tight">Guardião Nobe</h1>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-500/30 text-emerald-400 font-semibold">24/7</span>
-              <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-950/80 border border-blue-500/40 text-blue-300 font-mono font-bold tracking-wide">v2.6.1</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-950/80 border border-blue-500/40 text-blue-300 font-mono font-bold tracking-wide">v2.7.0</span>
             </div>
             <p class="text-[10px] text-slate-400 sm:block hidden">Proteção & Automação de Horas PJ</p>
           </div>
@@ -231,21 +231,49 @@
       <!-- Real-time Progress Trackers (Mobile friendly grid) -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
         
-        <!-- Next Comment Box -->
-        <div class="p-3.5 sm:p-4 rounded-xl bg-slate-950/90 border border-slate-800 hover:border-slate-700/80 transition shadow-sm space-y-2 relative">
-          <div class="flex justify-between items-center text-xs">
-            <span class="text-slate-300 font-medium flex items-center space-x-1.5">
-              <i data-lucide="clock" class="w-4 h-4 text-amber-400"></i>
-              <span class="text-[12px] sm:text-xs">Próximo Comentário</span>
-            </span>
-            <span class="text-amber-400 font-bold text-sm sm:text-base font-mono tracking-wider drop-shadow-[0_0_8px_rgba(245,158,11,0.3)]" id="countdownComment">--:--</span>
+        <!-- Periodic Comment Box with Bimodal Interactive Mode -->
+        <div id="commentBoxContainer" class="p-3.5 sm:p-4 rounded-xl bg-slate-950/90 border border-slate-800 hover:border-slate-700/80 transition shadow-sm space-y-2 relative">
+          <!-- Modo Normal de Contagem -->
+          <div id="commentNormalView" class="space-y-2">
+            <div class="flex justify-between items-center text-xs">
+              <span class="text-slate-300 font-medium flex items-center space-x-1.5">
+                <i data-lucide="clock" class="w-4 h-4 text-amber-400"></i>
+                <span class="text-[12px] sm:text-xs">Próximo Comentário</span>
+              </span>
+              <span class="text-amber-400 font-bold text-sm sm:text-base font-mono tracking-wider drop-shadow-[0_0_8px_rgba(245,158,11,0.3)]" id="countdownComment">--:--</span>
+            </div>
+            <div class="w-full bg-slate-800/90 rounded-full h-2 overflow-hidden shadow-inner">
+              <div id="progressComment" class="bg-gradient-to-r from-amber-500 to-orange-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_8px_rgba(245,158,11,0.4)]" style="width: 0%"></div>
+            </div>
+            <div class="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
+              <span>Jitter: 20-25m</span>
+              <span class="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono">20s lead • 2m timeout</span>
+            </div>
           </div>
-          <div class="w-full bg-slate-800/90 rounded-full h-2 overflow-hidden shadow-inner">
-            <div id="progressComment" class="bg-gradient-to-r from-amber-500 to-orange-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_8px_rgba(245,158,11,0.4)]" style="width: 0%"></div>
+
+          <!-- Modo Interativo Bimodal (Janela de 2min / 20s Lead) -->
+          <div id="commentInteractiveBox" class="space-y-2 hidden">
+            <div class="flex justify-between items-center text-xs">
+              <span class="text-emerald-400 font-bold flex items-center space-x-1.5 animate-pulse">
+                <i data-lucide="message-square-plus" class="w-4 h-4 text-emerald-400"></i>
+                <span>Aguardando Comentário</span>
+              </span>
+              <span class="text-amber-300 font-mono font-bold text-xs px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40" id="questionTimeoutCountdown">02:00</span>
+            </div>
+            <div class="flex items-center space-x-1.5">
+              <input type="text" id="webCommentInput" onkeydown="if(event.key==='Enter') submitWebActivityComment()" placeholder="O que você está executando agora?" class="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-emerald-500/50 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-400 transition" />
+              <button onclick="submitWebActivityComment()" id="btnSendWebComment" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-semibold shrink-0 transition flex items-center space-x-1 shadow-md shadow-emerald-950">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                <span>Enviar</span>
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-400">💡 Responda aqui ou envie direto no <b>Telegram</b></p>
           </div>
-          <div class="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
-            <span>Jitter: 20-25m</span>
-            <span class="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono">20s lead • 2m timeout</span>
+
+          <!-- Banner de Confirmação de Sucesso -->
+          <div id="commentSuccessBadge" class="hidden p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2">
+            <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+            <span id="commentSuccessText" class="truncate font-medium">Comentário registrado com sucesso!</span>
           </div>
         </div>
 
@@ -831,6 +859,6 @@
     </button>
   </nav>
 
-  <script src="/app.js?v=2.6.1"></script>
+  <script src="/app.js?v=2.7.0"></script>
 </body>
 </html>

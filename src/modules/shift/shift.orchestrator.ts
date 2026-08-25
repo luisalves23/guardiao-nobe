@@ -22,9 +22,12 @@ export class ShiftOrchestrator {
   private todayWorkedMinutes = 0;
   private todayWorkedSeconds = 0;
   private wsBroadcastCallback: ((status: LiveStatus) => void) | null = null;
+  private lastCommentSource: string | null = null;
+  private lastCommentText: string | null = null;
 
   private constructor() {
     this.restorePersistentState();
+    MessageDispatcher.getInstance().setOnQuestionStatusChanged(() => this.broadcastStatus());
   }
 
   public static getInstance(): ShiftOrchestrator {
@@ -141,6 +144,7 @@ export class ShiftOrchestrator {
     const dbWorkedSeconds = db.getTodayWorkedSeconds();
     const activeWorkedSeconds = dbWorkedSeconds > 0 ? dbWorkedSeconds : this.todayWorkedSeconds;
 
+    const dispatcher = MessageDispatcher.getInstance();
     return {
       state: this.state,
       activeCardId: this.activeCardId,
@@ -156,6 +160,10 @@ export class ShiftOrchestrator {
       todayFormattedTime: TrelloTimeAuditor.formatSecondsToHMS(activeWorkedSeconds),
       todayEarnings: Math.round((activeWorkedSeconds / 3600) * config.hourlyRate * 100) / 100,
       lastSyncTime: new Date().toISOString(),
+      isQuestionPending: dispatcher.isQuestionPending(),
+      questionDeadline: dispatcher.getQuestionDeadline(),
+      lastCommentSource: this.lastCommentSource,
+      lastCommentText: this.lastCommentText,
     };
   }
 
@@ -986,6 +994,9 @@ export class ShiftOrchestrator {
         const fallbackMsg = `⏱️ - [TEMPO ESGOTADO] - Limite de 2 min expirado. Para manter suas horas ativas na Nobe, comentei: "${commentText}"`;
         await dispatcher.broadcastAlert(fallbackMsg);
       }
+
+      this.lastCommentSource = source;
+      this.lastCommentText = commentText;
 
       await trelloCards.addComment(this.activeCardId, commentText);
       this.lastCommentTime = Date.now();

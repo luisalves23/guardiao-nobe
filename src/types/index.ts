@@ -129,4 +129,8 @@ export interface LiveStatus {
   todayFormattedTime: string;
   todayEarnings: number;
   lastSyncTime: string;
+  isQuestionPending?: boolean;
+  questionDeadline?: number | null;
+  lastCommentSource?: string | null;
+  lastCommentText?: string | null;
 }

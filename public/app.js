@@ -307,6 +307,72 @@ function formatHMSClient(totalSeconds) {
   return `${pad(hours)}h${pad(minutes)}min${pad(seconds)}seg`;
 }
 
+let wasQuestionPending = false;
+let commentSuccessTimeout = null;
+
+function showCommentSuccess(msg) {
+  const badge = document.getElementById('commentSuccessBadge');
+  const textEl = document.getElementById('commentSuccessText');
+  const interactiveBox = document.getElementById('commentInteractiveBox');
+  const normalView = document.getElementById('commentNormalView');
+
+  if (interactiveBox) interactiveBox.classList.add('hidden');
+  if (normalView) normalView.classList.remove('hidden');
+
+  if (badge && textEl) {
+    textEl.innerText = msg;
+    badge.classList.remove('hidden');
+    if (commentSuccessTimeout) clearTimeout(commentSuccessTimeout);
+    commentSuccessTimeout = setTimeout(() => {
+      badge.classList.add('hidden');
+    }, 4000);
+  }
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function submitWebActivityComment() {
+  const input = document.getElementById('webCommentInput');
+  const btn = document.getElementById('btnSendWebComment');
+  if (!input) return;
+
+  const text = input.value.trim();
+  if (!text) {
+    input.focus();
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="animate-spin inline-block mr-1">⏳</span> Enviando...';
+  }
+
+  try {
+    const res = await fetch('/api/activity/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      input.value = '';
+      showCommentSuccess('✅ Comentário registrado via Painel Web!');
+      await loadStatus();
+    } else {
+      alert(data.error || 'Erro ao enviar comentário.');
+    }
+  } catch (err) {
+    console.error('Erro ao enviar comentário web:', err);
+    alert('Falha na comunicação com o servidor.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="send" class="w-3.5 h-3.5 mr-1"></i><span>Enviar</span>';
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }
+}
+
 // Atualização dos Contadores Regressivos
 function updateTimersDisplay() {
   const countdownComment = document.getElementById('countdownComment');
@@ -314,6 +380,9 @@ function updateTimersDisplay() {
   const countdownRotation = document.getElementById('countdownRotation');
   const compactCountdownRotation = document.getElementById('compactCountdownRotation');
   const progressRotation = document.getElementById('progressRotation');
+  const commentNormalView = document.getElementById('commentNormalView');
+  const commentInteractiveBox = document.getElementById('commentInteractiveBox');
+  const questionTimeoutCountdown = document.getElementById('questionTimeoutCountdown');
 
   if (!liveStatus || liveStatus.state !== 'WORKING') {
     if (countdownComment) countdownComment.innerText = '--:--';
@@ -321,6 +390,8 @@ function updateTimersDisplay() {
     if (countdownRotation) countdownRotation.innerText = '--:--:--';
     if (compactCountdownRotation) compactCountdownRotation.innerText = '--:--:--';
     if (progressRotation) progressRotation.style.width = '0%';
+    if (commentInteractiveBox) commentInteractiveBox.classList.add('hidden');
+    if (commentNormalView) commentNormalView.classList.remove('hidden');
     return;
   }
 
@@ -333,7 +404,35 @@ function updateTimersDisplay() {
 
   const now = Date.now();
 
-  // 1. Contador de Comentário (MM:SS ou HH:MM:SS)
+  // Tratamento da Pergunta Ativa Bimodal (Web & Telegram)
+  const isPending = Boolean(liveStatus.isQuestionPending);
+
+  if (isPending) {
+    if (commentNormalView) commentNormalView.classList.add('hidden');
+    if (commentInteractiveBox) commentInteractiveBox.classList.remove('hidden');
+
+    if (questionTimeoutCountdown && liveStatus.questionDeadline) {
+      const remainingTimeout = Math.max(0, liveStatus.questionDeadline - now);
+      questionTimeoutCountdown.innerText = formatTimer(remainingTimeout);
+    }
+    wasQuestionPending = true;
+  } else {
+    if (wasQuestionPending) {
+      wasQuestionPending = false;
+      const source = liveStatus.lastCommentSource === 'USER_WEB' || liveStatus.lastCommentSource === 'WEB' ? 'Painel Web' : 'Telegram';
+      const detail = liveStatus.lastCommentText ? `: "${liveStatus.lastCommentText}"` : '!';
+      showCommentSuccess(`✅ Comentado via ${source}${detail}`);
+    } else {
+      if (commentInteractiveBox && (!commentSuccessTimeout || document.getElementById('commentSuccessBadge')?.classList.contains('hidden'))) {
+        commentInteractiveBox.classList.add('hidden');
+      }
+      if (commentNormalView && (!commentSuccessTimeout || document.getElementById('commentSuccessBadge')?.classList.contains('hidden'))) {
+        commentNormalView.classList.remove('hidden');
+      }
+    }
+  }
+
+  // 1. Contador de Comentário (MM:SS ou HH:MM:SS) com contagem ininterrupta
   if (liveStatus.nextCommentTargetTime && countdownComment && progressComment) {
     const target = new Date(liveStatus.nextCommentTargetTime).getTime();
     const remaining = Math.max(0, target - now);

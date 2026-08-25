@@ -64,10 +64,20 @@ test('E2E UI & Graphical Interface: Bateria Completa com Navegador Real', async 
     const topEarnings = await page.locator('#topEarnings').innerText();
     assert.match(topEarnings, /^R\$\s*\d+,\d{2}$/);
 
-    // Validação da versão v2.6.1 no cabeçalho
-    const versionBadge = await page.locator('text=v2.6.1').first();
-    assert.ok(await versionBadge.isVisible(), 'Badge de versão v2.6.1 deve estar visível no topo');
-    console.log('[E2E UI] ✅ Badge de versão v2.6.1 identificado com sucesso no cabeçalho');
+    // Validação da versão v2.7.0 no cabeçalho
+    const versionBadge = await page.locator('text=v2.7.0').first();
+    assert.ok(await versionBadge.isVisible(), 'Badge de versão v2.7.0 deve estar visível no topo');
+    console.log('[E2E UI] ✅ Badge de versão v2.7.0 identificado com sucesso no cabeçalho');
+
+    // Teste de Submissão de Comentário pelo Painel Web
+    console.log('[E2E UI] 💬 Testando envio de comentário pelo Painel Web...');
+    await page.evaluate("document.getElementById('commentInteractiveBox')?.classList.remove('hidden')");
+    const webInput = page.locator('#webCommentInput');
+    await webInput.fill('Desenvolvendo testes E2E do Guardião Nobe');
+    const btnSendWeb = page.locator('#btnSendWebComment');
+    await btnSendWeb.click();
+    await page.waitForTimeout(600);
+    console.log('[E2E UI] ✅ Comentário submetido com sucesso via Painel Web');
 
     // 4. Teste do Menu Sanduíche (Drawer)
     console.log('[E2E UI] 🥪 Testando Menu Sanduíche (Drawer)...');
